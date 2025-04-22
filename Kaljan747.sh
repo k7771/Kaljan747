@@ -1,5 +1,8 @@
 #!/bin/bash
 
+sudo apt update -y && sudo apt upgrade -y
+sudo apt install curl sed dos2unix screen -y
+
 MODULE_DIR="modules"
 WG_DIR="/etc/wireguard"
 MONITOR_INTERVAL=60  # default to 1 minute
