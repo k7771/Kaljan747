@@ -1,5 +1,6 @@
 #!/bin/bash
 
+#=== Оновлення системи та встановлення залежностей ===
 sudo apt update -y && sudo apt upgrade -y
 sudo apt install curl sed dos2unix screen -y
 
