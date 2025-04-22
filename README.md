@@ -5,6 +5,7 @@
 ## Завантаження та налаштування
 
 Оновлення системи та встановлення залежностей:
+```bash
 sudo apt update -y && sudo apt upgrade -y
 sudo apt install curl sed dos2unix screen -y
 
@@ -14,24 +15,30 @@ sudo apt install curl sed dos2unix screen -y
 curl -s https://raw.githubusercontent.com/k7771/Kaljan747/main/Kaljan747.sh | sed 's/\r//' > /usr/local/bin/kaljan && chmod +x /usr/local/bin/kaljan
 Формати конфігураційних файлів
 Формат файлу mhddos.ini
+```bash
 --use-my-ip=0      # Не використовувати свою IP
 -t 8000            # Кількість потоків
 --copies=2         # Кількість копій
 --user-id=******** # Прихований user ID
 Формат файлу distress.ini
+```bash
 --use-my-ip        # Використовувати IP
 --disable-auto-update # Вимкнути автооновлення
 -c 35000           # Потоки
 --user-id=******** # ID
 Вимкнення скрипту
 Для зупинки скрипту натисніть:
+```bash
 ctrl+c
 Запуск скрипту
 Після виконання попередньої команди ви зможете запускати скрипт з будь-якого місця в системі, просто ввівши:
+```bash
 kaljan
 Використання з screen
 Для згортання в режимі screen:
 Натисніть:
+```bash
 ctrl+a+d
 Для виведення з фонового режиму:
+```bash
 screen -r
