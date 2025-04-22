@@ -11,11 +11,18 @@ MONITOR_INTERVAL=60  # default to 1 minute
 mkdir -p "$MODULE_DIR"
 
 #=== Завантаження модулів ===
-echo "[+] Завантаження модулів..."
-wget -qO "$MODULE_DIR/mhddos_proxy" https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux
-wget -qO "$MODULE_DIR/distress" https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl
-chmod +x "$MODULE_DIR/mhddos_proxy" "$MODULE_DIR/distress"
+echo "[+] Перевірка наявності модулів..."
+if [ ! -f "$MODULE_DIR/mhddos_proxy" ]; then
+  echo "[+] Завантаження mhddos_proxy..."
+  wget -qO "$MODULE_DIR/mhddos_proxy" https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux
+  chmod +x "$MODULE_DIR/mhddos_proxy"
+fi
 
+if [ ! -f "$MODULE_DIR/distress" ]; then
+  echo "[+] Завантаження distress..."
+  wget -qO "$MODULE_DIR/distress" https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl
+  chmod +x "$MODULE_DIR/distress"
+fi
 #=== Пошук WG-конфігів і запуск ===
 echo "[+] Пошук WireGuard конфігів у $WG_DIR..."
 WG_FILES=$(find "$WG_DIR" -name "*.conf" -type f)
