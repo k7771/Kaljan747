@@ -60,7 +60,7 @@ elif [[ "$module_choice" == "2" ]]; then
     echo "[+] Додавання WireGuard інтерфейсів до distress.ini..."
     [[ -f "$CONFIG_FILE" ]] && grep -v "^--interface" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" || touch "$CONFIG_FILE.tmp"
     echo -n "--interface " >> "$CONFIG_FILE.tmp"
-    IFS=','; echo "${WG_IFACES[*]}" | sed 's/ /,/g' >> "$CONFIG_FILE.tmp"
+    echo "${WG_IFACES[*]}" | tr ' ' ',' >> "$CONFIG_FILE.tmp"
     mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
 fi
 
