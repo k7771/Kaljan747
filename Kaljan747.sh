@@ -18,6 +18,12 @@ done
 
 chmod 600 "$WG_DIR"/*.conf 2>/dev/null
 
+# Перевірка: чи є завантажені конфіги
+if ! compgen -G "$WG_DIR/*.conf" > /dev/null; then
+    echo "[-] Жодного .conf файлу не завантажено! Перевірте репозиторій або інтернет-з'єднання."
+    exit 1
+fi
+
 mkdir -p "$MODULE_DIR"
 
 #=== Завантаження модулів ===
