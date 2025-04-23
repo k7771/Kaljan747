@@ -69,8 +69,8 @@ echo "[+] Перевірка наявності модулів..."
 [ -f "$MODULE_DIR/distress" ] || wget -qO "$MODULE_DIR/distress" https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl
 
 #=== Рандомний вибір WG-конфігів і запуск ===
-echo "[+] Випадковий вибір 7 WireGuard конфігів з $WG_DIR..."
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 7))
+echo "[+] Випадковий вибір 5 WireGuard конфігів з $WG_DIR..."
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 5))
 WG_IFACES=()
 
 for conf in "${WG_FILES[@]}"; do
