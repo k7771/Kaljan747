@@ -2,7 +2,7 @@
 
 # Тимчасова папка
 TMP_DIR="/tmp/wg-configs"
-WG_REPO="https://github.com/k7771/config"
+WG_REPO="https://github.com/k7771/config/tree/main/WG"
 WG_SUBDIR="WG"
 TARGET_DIR="/etc/wireguard"
 
