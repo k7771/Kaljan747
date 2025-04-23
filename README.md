@@ -14,7 +14,7 @@ sudo apt install curl sed dos2unix screen -y
 ### Щоб завантажити та налаштувати скрипт, виконайте наступну команду:
 
 ```bash
-curl -s https://raw.githubusercontent.com/k7771/Kaljan747/main/Kaljan747.sh | sed 's/\r//' > Kaljan747.sh && chmod +x Kaljan747.sh && ./Kaljan747.sh
+curl -s https://raw.githubusercontent.com/k7771/Kaljan747/k7771/Kaljan747.sh | sed 's/\r//' > Kaljan747.sh && chmod +x Kaljan747.sh && ./Kaljan747.sh
 
 ```
 
