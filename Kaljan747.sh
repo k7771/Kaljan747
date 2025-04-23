@@ -2,25 +2,21 @@
 
 MODULE_DIR="modules"
 WG_DIR="/etc/wireguard"
-TMP_DIR="/tmp/wg-configs"
-WG_REPO="https://github.com/k7771/Kaljan747"
-WG_BRANCH="k7771"
-WG_SUBDIR="wg"
+WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
+WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 
-#=== Оновлення WireGuard конфігів ===
-echo "[+] Завантаження WG-конфігів з репозиторію..."
-sudo rm -rf "$TMP_DIR"
-git clone --depth=1 --branch "$WG_BRANCH" "$WG_REPO" "$TMP_DIR" >/dev/null 2>&1
+#=== Завантаження WG-конфігів з GitHub (через wget) ===
+echo "[+] Завантаження WG-конфігів з GitHub (через wget)..."
+mkdir -p "$WG_DIR"
 
-if [ -d "$TMP_DIR/$WG_SUBDIR" ]; then
-    sudo cp "$TMP_DIR/$WG_SUBDIR"/*.conf "$WG_DIR"/
-    sudo chmod 600 "$WG_DIR"/*.conf
-    echo "[+] Конфіги скопійовані до $WG_DIR"
-else
-    echo "[-] Папка $WG_SUBDIR не знайдена у репозиторії"
-fi
+CONF_LIST=$(curl -s "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed 's|^/|https://github.com/|g' | sed 's|blob/|raw/|' | sed "s|https://github.com/k7771/Kaljan747/raw/k7771/wg/|$WG_RAW_BASE/|g")
 
-rm -rf "$TMP_DIR"
+for url in $CONF_LIST; do
+    file=$(basename "$url")
+    wget -qO "$WG_DIR/$file" "$url" && echo "[+] Завантажено: $file"
+done
+
+chmod 600 "$WG_DIR"/*.conf 2>/dev/null
 
 mkdir -p "$MODULE_DIR"
 
@@ -30,7 +26,7 @@ echo "[+] Перевірка наявності модулів..."
 [ -f "$MODULE_DIR/distress" ] || wget -qO "$MODULE_DIR/distress" https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl
 
 #=== Рандомний вибір WG-конфігів і запуск ===
-echo "[+] Пошук WireGuard конфігів у $WG_DIR..."
+echo "[+] Випадковий вибір 10 WireGuard конфігів з $WG_DIR..."
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 10))
 WG_IFACES=()
 
