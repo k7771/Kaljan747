@@ -5,6 +5,35 @@ WG_DIR="/etc/wireguard"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 
+#=== Створення конфігів .ini при відсутності ===
+echo "[+] Перевірка конфігів .ini..."
+INI1="$MODULE_DIR/mhddos.ini"
+INI2="$MODULE_DIR/distress.ini"
+
+mkdir -p "$MODULE_DIR"
+
+if [ ! -f "$INI1" ]; then
+  echo "--use-my-ip=0 -t 8000 --copies auto --user-id=" > "$INI1"
+  echo "[+] Створено mhddos.ini"
+fi
+
+if [ ! -f "$INI2" ]; then
+  echo "--use-my-ip 0 -c 40000 --use-tor 10 --user-id=" > "$INI2"
+  echo "[+] Створено distress.ini"
+fi
+
+#=== Запит на user-id ===
+if grep -q -- "--user-id=$" "$INI1" || grep -q -- "--user-id=$" "$INI2"; then
+    read -p "[?] Введіть ваш user-id: " USER_ID
+    if [[ -n "$USER_ID" ]]; then
+        sed -i "s/--user-id=\$/--user-id=$USER_ID/" "$INI1" 2>/dev/null
+        sed -i "s/--user-id=\$/--user-id=$USER_ID/" "$INI2" 2>/dev/null
+        echo "[+] ID встановлено до конфігів."
+    else
+        echo "[-] ID не введено. Конфіги залишаються незмінні."
+    fi
+fi
+
 #=== Завантаження WG-конфігів з GitHub (через wget) ===
 echo "[+] Завантаження WG-конфігів з GitHub (через wget)..."
 mkdir -p "$WG_DIR"
@@ -33,8 +62,6 @@ if ! compgen -G "$WG_DIR/*.conf" > /dev/null; then
     echo "[-] Жодного .conf файлу не завантажено! Перевірте репозиторій або інтернет-з'єднання."
     exit 1
 fi
-
-mkdir -p "$MODULE_DIR"
 
 #=== Завантаження модулів ===
 echo "[+] Перевірка наявності модулів..."
