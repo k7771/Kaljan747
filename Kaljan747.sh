@@ -9,11 +9,21 @@ WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 echo "[+] Завантаження WG-конфігів з GitHub (через wget)..."
 mkdir -p "$WG_DIR"
 
-CONF_LIST=$(curl -s "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed 's|^/|https://github.com/|g' | sed 's|blob/|raw/|' | sed "s|https://github.com/k7771/Kaljan747/raw/k7771/wg/|$WG_RAW_BASE/|g")
+CONF_LIST=$(curl -s "$WG_REPO_HTML" |
+  grep -oP '(?<=href=").*?\.conf(?=")' |
+  grep '/k7771/Kaljan747/blob/' |
+  sed 's|^/|https://github.com/|g' |
+  sed 's|blob/|raw/|' |
+  sed "s|https://github.com/k7771/Kaljan747/raw/k7771/wg/|$WG_RAW_BASE/|g" |
+  grep -E '\.conf$')
 
 for url in $CONF_LIST; do
     file=$(basename "$url")
-    wget -qO "$WG_DIR/$file" "$url" && echo "[+] Завантажено: $file"
+    if [[ "$file" =~ ^[a-zA-Z0-9._-]+\.conf$ ]]; then
+        wget -qO "$WG_DIR/$file" "$url" && echo "[+] Завантажено: $file"
+    else
+        echo "[-] Пропущено (некоректне ім'я): $file"
+    fi
 done
 
 chmod 600 "$WG_DIR"/*.conf 2>/dev/null
