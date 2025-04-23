@@ -70,7 +70,7 @@ echo "[+] Перевірка наявності модулів..."
 
 #=== Рандомний вибір WG-конфігів і запуск ===
 echo "[+] Випадковий вибір 10 WireGuard конфігів з $WG_DIR..."
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 10))
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 5))
 WG_IFACES=()
 
 for conf in "${WG_FILES[@]}"; do
