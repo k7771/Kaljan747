@@ -1,5 +1,32 @@
 #!/bin/bash
 
+# Тимчасова папка
+TMP_DIR="/tmp/wg-configs"
+WG_REPO="https://github.com/k7771/config"
+WG_SUBDIR="WG"
+TARGET_DIR="/etc/wireguard"
+
+# Створення тимчасової папки
+rm -rf "$TMP_DIR"
+git clone --depth=1 "$WG_REPO" "$TMP_DIR"
+
+# Перевірка чи існує потрібна папка
+if [ ! -d "$TMP_DIR/$WG_SUBDIR" ]; then
+    echo "Папка $WG_SUBDIR не знайдена у репозиторії"
+    exit 1
+fi
+
+# Копіювання конфігів
+sudo cp "$TMP_DIR/$WG_SUBDIR"/*.conf "$TARGET_DIR"/
+
+# Встановлення прав доступу
+sudo chmod 600 "$TARGET_DIR"/*.conf
+
+# Видалення тимчасової папки
+rm -rf "$TMP_DIR"
+
+echo "Конфіги успішно скопійовані до $TARGET_DIR"
+
 MODULE_DIR="modules"
 WG_DIR="/etc/wireguard"
 MONITOR_INTERVAL=60  # default to 1 minute
