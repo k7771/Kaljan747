@@ -190,11 +190,4 @@ trap 'echo "[!] Скрипт завершено вручну. Видаляємо
 #=== Автоматичний перезапуск скрипта щогодини ===
 echo "[+] Автоматичний перезапуск через 1 годину..."
 sleep $(($(date -d 'next hour' +%s) - $(date +%s) - 60))
-
-SCRIPT_PID=$(pgrep -f "$SCRIPT_PATH" | grep -v "$$")
-if [[ -n "$SCRIPT_PID" ]]; then
-    echo "[+] Завершення попереднього процесу ($SCRIPT_PID)..."
-    kill "$SCRIPT_PID"
-fi
-
 exec "$SCRIPT_PATH"
