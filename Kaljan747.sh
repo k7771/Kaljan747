@@ -140,11 +140,17 @@ echo "[+] Використання параметрів із $CONFIG_FILE"
 ARGS=$(cat "$CONFIG_FILE")
 
 #=== Вибір способу запуску ===
-echo "[?] Виберіть спосіб запуску:"
-echo "1 - screen у фоні"
-echo "2 - screen з виводом"
-echo "3 - без screen у поточному терміналі"
-run_mode=1  # Автоматичний запуск у screen без запиту
+RUN_MODE_FILE="last_run_mode.txt"
+if [[ ! -f "$RUN_MODE_FILE" ]]; then
+    echo "[?] Виберіть спосіб запуску:"
+    echo "1 - screen у фоні"
+    echo "2 - screen з виводом"
+    echo "3 - без screen у поточному терміналі"
+    read -p "[1/2/3]: " run_mode
+    echo "$run_mode" > "$RUN_MODE_FILE"
+else
+    run_mode=$(cat "$RUN_MODE_FILE")
+fi
 
 ARGS=$(cat "$CONFIG_FILE")
 
