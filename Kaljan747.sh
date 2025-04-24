@@ -136,12 +136,28 @@ elif [[ "$module_choice" == "2" ]]; then
 fi
 
 #=== Налаштування параметрів модуля ===
-echo "[+] Використання параметрів із $CONFIG_FILE"
+if [[ "$INTERACTIVE" == true ]]; then
+  echo "[+] Поточні параметри ($CONFIG_FILE):"
+  cat "$CONFIG_FILE"
+  echo "[?] Хочете змінити параметри? (y/n):"
+  read -r edit_ans
+  if [[ $edit_ans == "y" ]]; then
+      echo "[+] Введіть нові параметри:"
+      read -r new_args
+      echo "$new_args" > "$CONFIG_FILE"
+      if [[ "$module_choice" == "1" ]]; then
+          echo -n "--ifaces ${WG_IFACES[*]}" >> "$CONFIG_FILE"
+      elif [[ "$module_choice" == "2" ]]; then
+          echo -n "--interface " >> "$CONFIG_FILE"
+          echo "${WG_IFACES[*]}" | tr ' ' ',' >> "$CONFIG_FILE"
+      fi
+  fi
+fi
 ARGS=$(cat "$CONFIG_FILE")
 
 #=== Вибір способу запуску ===
 RUN_MODE_FILE="last_run_mode.txt"
-if [[ ! -f "$RUN_MODE_FILE" ]]; then
+if [[ ! -f "$RUN_MODE_FILE" || "$INTERACTIVE" == true ]]; then
     echo "[?] Виберіть спосіб запуску:"
     echo "1 - screen у фоні"
     echo "2 - screen з виводом"
