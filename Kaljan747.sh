@@ -5,8 +5,6 @@ WG_DIR="/etc/wireguard"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 
-for i in $(sudo wg show interfaces); do sudo systemctl stop wg-quick@$i && sudo systemctl disable wg-quick@$i; done
-
 #=== Створення конфігів .ini при відсутності ===
 echo "[+] Перевірка конфігів .ini..."
 INI1="$MODULE_DIR/mhddos.ini"
