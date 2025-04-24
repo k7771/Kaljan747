@@ -88,9 +88,21 @@ for conf in "${WG_FILES[@]}"; do
 done
 
 #=== Вибір модуля ===
-echo "[1] mhddos_proxy"
-echo "[2] distress"
-read -p "[?] Виберіть модуль (1/2): " module_choice
+CONFIG_CHOICE_FILE="last_module_choice.txt"
+INTERACTIVE=false
+
+# Якщо перший запуск
+if [[ ! -f "$CONFIG_CHOICE_FILE" ]]; then
+    echo "[?] Виберіть модуль:"
+    echo "1 - mhddos_proxy"
+    echo "2 - distress"
+    read -p "[1/2]: " module_choice
+    echo "$module_choice" > "$CONFIG_CHOICE_FILE"
+    INTERACTIVE=true
+else
+    module_choice=$(cat "$CONFIG_CHOICE_FILE")
+fi
+
 case $module_choice in
     1)
         MODULE="$MODULE_DIR/mhddos_proxy"
@@ -124,28 +136,15 @@ elif [[ "$module_choice" == "2" ]]; then
 fi
 
 #=== Налаштування параметрів модуля ===
-echo "[+] Поточні параметри ($CONFIG_FILE):"
-cat "$CONFIG_FILE"
-echo "[?] Хочете змінити параметри? (y/n):"
-read -r edit_ans
-if [[ $edit_ans == "y" ]]; then
-    echo "[+] Введіть нові параметри:"
-    read -r new_args
-    echo "$new_args" > "$CONFIG_FILE"
-    if [[ "$module_choice" == "1" ]]; then
-        echo -n "--ifaces ${WG_IFACES[*]}" >> "$CONFIG_FILE"
-    elif [[ "$module_choice" == "2" ]]; then
-        echo -n "--interface " >> "$CONFIG_FILE"
-        echo "${WG_IFACES[*]}" | tr ' ' ',' >> "$CONFIG_FILE"
-    fi
-fi
+echo "[+] Використання параметрів із $CONFIG_FILE"
+ARGS=$(cat "$CONFIG_FILE")
 
 #=== Вибір способу запуску ===
 echo "[?] Виберіть спосіб запуску:"
 echo "1 - screen у фоні"
 echo "2 - screen з виводом"
 echo "3 - без screen у поточному терміналі"
-read -p "[1/2/3]: " run_mode
+run_mode=1  # Автоматичний запуск у screen без запиту
 
 ARGS=$(cat "$CONFIG_FILE")
 
