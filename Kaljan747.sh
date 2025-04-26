@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MODULE_DIR="modules"
-WG_DIR="/etc/wireguard"
+WG_DIR="$HOME/wg_confs"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 SCRIPT_PATH="$(realpath "$0")"
