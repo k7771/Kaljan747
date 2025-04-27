@@ -14,7 +14,7 @@ INI2="$MODULE_DIR/distress.ini"
 mkdir -p "$MODULE_DIR"
 
 if [ ! -f "$INI1" ]; then
-  echo "--use-my-ip=0 -t 8000 --copies auto --user-id=" > "$INI1"
+  echo "--use-my-ip 0 -t 8000 --copies auto --user-id=" > "$INI1"
   echo "[+] Створено mhddos.ini"
 fi
 
