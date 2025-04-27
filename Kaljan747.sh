@@ -13,7 +13,7 @@ else
         SUDO="sudo"
         echo "[+] sudo доступний."
     else
-        echo "[-] sudo не знайдено. Потрібно встановити або увійти як root."
+        echo "[-] sudo не знайдено. Встановіть або увійдіть як root."
         exit 1
     fi
 fi
@@ -140,39 +140,32 @@ else
     run_mode=$(cat "$RUN_MODE_FILE")
 fi
 
-#=== Основний цикл перезапуску ===
-while true; do
-    echo "[+] Очікування до наступної години..."
-    SLEEP_SEC=$((3600 - $(date +%M)*60 - $(date +%S)))
-    sleep $SLEEP_SEC
-
-    echo "[+] Перезапуск: зупинка модуля..."
-    pkill -f "$MODULE" 2>/dev/null || screen -S "$MODULE_NAME" -X quit 2>/dev/null || true
-    sleep 2
-
-    echo "[+] Вимкнення всіх WG інтерфейсів..."
-    ACTIVE_WG=$(wg show interfaces 2>/dev/null || true)
-    for iface in $ACTIVE_WG; do
-        $SUDO wg-quick down "$iface" || true
-    done
-    sleep 2
-
-    echo "[+] Підключення нових WG конфігів..."
-    WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
-    for conf in "${WG_FILES[@]}"; do
-        $SUDO wg-quick up "$conf" && echo "[+] Підключено: $conf"
-        sleep 1
-    done
-
-    echo "[+] Запуск модуля..."
-    if [[ $run_mode == "1" ]]; then
-        screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat "$CONFIG_FILE")"
-    elif [[ $run_mode == "2" ]]; then
-        screen -S "$MODULE_NAME" bash -c "$MODULE $(cat "$CONFIG_FILE")"
-    elif [[ $run_mode == "3" ]]; then
-        bash -c "$MODULE $(cat "$CONFIG_FILE")"
-    fi
-
-    echo "[+] Логування перезапуску..."
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [+] Перезапуск виконано." >> "$LOG_DIR/kaljan.log"
+#=== Одиночна ініціалізація: зупинка старих WG, запуск нових і модуля ===
+echo "[+] Вимкнення всіх активних WG інтерфейсів..."
+ACTIVE_WG=$(wg show interfaces 2>/dev/null || true)
+for iface in $ACTIVE_WG; do
+    $SUDO wg-quick down "$iface" || true
 done
+
+sleep 2
+
+echo "[+] Підключення нових WG конфігів..."
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
+for conf in "${WG_FILES[@]}"; do
+    $SUDO wg-quick up "$conf" && echo "[+] Підключено: $conf"
+    sleep 1
+done
+
+echo "[+] Запуск модуля..."
+if [[ $run_mode == "1" ]]; then
+    screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat "$CONFIG_FILE")"
+elif [[ $run_mode == "2" ]]; then
+    screen -S "$MODULE_NAME" bash -c "$MODULE $(cat "$CONFIG_FILE")"
+elif [[ $run_mode == "3" ]]; then
+    bash -c "$MODULE $(cat "$CONFIG_FILE")"
+else
+    echo "[-] Невірний вибір режиму запуску!"
+    exit 1
+fi
+
+echo "[+] Робота завершена! Модуль запущено. Для контролю використовуйте 'screen -ls' або логи."
