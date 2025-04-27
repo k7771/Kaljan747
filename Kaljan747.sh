@@ -2,7 +2,7 @@
 
 set -e
 
-#=== Автоматична підготовка для будь-якого Linux ===
+#=== Підготовка середовища для будь-якої Linux-системи ===
 
 echo "[+] Перевірка користувача..."
 if [ "$(id -u)" -eq 0 ]; then
@@ -13,7 +13,7 @@ else
         SUDO="sudo"
         echo "[+] sudo доступний."
     else
-        echo "[-] sudo не знайдено. Встановіть або увійдіть як root."
+        echo "[-] sudo не знайдено. Потрібно встановити або увійти як root."
         exit 1
     fi
 fi
@@ -46,11 +46,11 @@ echo "[+] Оновлення системи і встановлення необ
 $UPDATE_CMD
 $INSTALL_CMD curl wget git screen sed
 
-#=== Створення папок ===
-echo "[+] Підготовка папок..."
+#=== Підготовка папок ===
 MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
-mkdir -p "$MODULE_DIR" "$WG_DIR"
+LOG_DIR="$HOME/logs"
+mkdir -p "$MODULE_DIR" "$WG_DIR" "$LOG_DIR"
 
 SCRIPT_PATH="$(realpath "$0")"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
@@ -68,7 +68,6 @@ done
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
 #=== Створення .ini файлів ===
-echo "[+] Перевірка .ini файлів..."
 INI1="$MODULE_DIR/mhddos.ini"
 INI2="$MODULE_DIR/distress.ini"
 
@@ -119,7 +118,7 @@ esac
 
 ARGS=$(cat "$CONFIG_FILE")
 
-#=== Вибір режиму запуску ===
+#=== Вибір способу запуску ===
 RUN_MODE_FILE="$HOME/last_run_mode.txt"
 if [[ ! -s "$RUN_MODE_FILE" ]]; then
     echo "[?] Виберіть спосіб запуску:"
@@ -131,26 +130,27 @@ else
     run_mode=$(cat "$RUN_MODE_FILE")
 fi
 
-#=== Основний цикл перезапуску ===
+#=== Основний цикл запуску ===
 while true; do
-    echo "[+] Зупинка модуля..."
-    pkill -f "$MODULE" 2>/dev/null || screen -S "$MODULE_NAME" -X quit 2>/dev/null || true
-    sleep 3
+    echo "[+] Очікування до наступної години..."
+    SLEEP_SEC=$((3600 - $(date +%M)*60 - $(date +%S)))
+    sleep $SLEEP_SEC
 
-    echo "[+] Відключення всіх WG інтерфейсів..."
+    echo "[+] Перезапуск: зупинка модуля..."
+    pkill -f "$MODULE" 2>/dev/null || screen -S "$MODULE_NAME" -X quit 2>/dev/null || true
+    sleep 2
+
+    echo "[+] Вимкнення всіх WG інтерфейсів..."
     ACTIVE_WG=$(wg show interfaces 2>/dev/null || true)
     for iface in $ACTIVE_WG; do
         $SUDO wg-quick down "$iface" || true
-        sleep 1
     done
+    sleep 2
 
     echo "[+] Підключення нових WG конфігів..."
     WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
-    WG_IFACES=()
     for conf in "${WG_FILES[@]}"; do
-        IFACE_NAME=$(basename "$conf" .conf)
         $SUDO wg-quick up "$conf" && echo "[+] Підключено: $conf"
-        WG_IFACES+=("$IFACE_NAME")
         sleep 1
     done
 
@@ -161,6 +161,7 @@ while true; do
         $MODULE $ARGS
     fi
 
-    echo "[+] Очікування 59 хвилин..."
-    sleep 3540
+    echo "[+] Перезапуск за годину підготовлений."
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [+] Перезапуск виконано." >> "$LOG_DIR/kaljan.log"
+
 done
