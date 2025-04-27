@@ -2,28 +2,52 @@
 
 set -e
 
-#=== Підготовка ===
-echo "[+] Перевірка і встановлення необхідних пакетів..."
-PKGS=(curl wget git screen sed)
+#=== Автоматична підготовка для будь-якого Linux ===
 
+echo "[+] Перевірка користувача..."
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+    echo "[+] Ви root. sudo не потрібен."
+else
+    if command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+        echo "[+] sudo доступний."
+    else
+        echo "[-] sudo не знайдено. Встановіть або увійдіть як root."
+        exit 1
+    fi
+fi
+
+echo "[+] Визначення пакетного менеджера..."
 if command -v apt-get >/dev/null 2>&1; then
     PKG_MANAGER="apt-get"
+    UPDATE_CMD="$SUDO apt-get update -y"
+    INSTALL_CMD="$SUDO apt-get install -y"
+elif command -v dnf >/dev/null 2>&1; then
+    PKG_MANAGER="dnf"
+    UPDATE_CMD="$SUDO dnf check-update || true"
+    INSTALL_CMD="$SUDO dnf install -y"
 elif command -v yum >/dev/null 2>&1; then
     PKG_MANAGER="yum"
+    UPDATE_CMD="$SUDO yum check-update || true"
+    INSTALL_CMD="$SUDO yum install -y"
+elif command -v apk >/dev/null 2>&1; then
+    PKG_MANAGER="apk"
+    UPDATE_CMD="$SUDO apk update"
+    INSTALL_CMD="$SUDO apk add"
 else
     echo "[-] Не знайдено підтримуваного пакетного менеджера."
     exit 1
 fi
 
-for pkg in "${PKGS[@]}"; do
-    if ! command -v "$pkg" >/dev/null 2>&1; then
-        echo "[+] Встановлення: $pkg"
-        sudo $PKG_MANAGER install -y "$pkg"
-    fi
-done
+echo "[+] Менеджер пакетів: $PKG_MANAGER"
 
-#=== Підготовка папок ===
-echo "[+] Підготовка структури папок..."
+echo "[+] Оновлення системи і встановлення необхідних пакетів..."
+$UPDATE_CMD
+$INSTALL_CMD curl wget git screen sed
+
+#=== Створення папок ===
+echo "[+] Підготовка папок..."
 MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
@@ -32,8 +56,8 @@ SCRIPT_PATH="$(realpath "$0")"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 
-#=== Завантаження WG конфігів ===
-echo "[+] Завантаження WG конфігів..."
+#=== Завантаження WG-конфігів ===
+echo "[+] Завантаження WG-конфігів..."
 CONF_LIST=$(curl -s "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed 's|^/|https://github.com/|g' | sed 's|blob/|raw/|' | sed "s|https://github.com/k7771/Kaljan747/raw/k7771/wg/|$WG_RAW_BASE/|g" | grep -E '\.conf$')
 
 for url in $CONF_LIST; do
@@ -41,10 +65,10 @@ for url in $CONF_LIST; do
     wget -qO "$WG_DIR/$file" "$url" && echo "[+] Завантажено: $file"
 done
 
-chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
+$SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
 #=== Створення .ini файлів ===
-echo "[+] Створення .ini файлів..."
+echo "[+] Перевірка .ini файлів..."
 INI1="$MODULE_DIR/mhddos.ini"
 INI2="$MODULE_DIR/distress.ini"
 
@@ -95,29 +119,28 @@ esac
 
 ARGS=$(cat "$CONFIG_FILE")
 
-#=== Вибір способу запуску ===
+#=== Вибір режиму запуску ===
 RUN_MODE_FILE="$HOME/last_run_mode.txt"
 if [[ ! -s "$RUN_MODE_FILE" ]]; then
     echo "[?] Виберіть спосіб запуску:"
     echo "1 - screen у фоні"
-    echo "2 - screen з виводом"
-    echo "3 - без screen у терміналі"
-    read -p "[1/2/3]: " run_mode
+    echo "2 - без screen у терміналі"
+    read -p "[1/2]: " run_mode
     echo "$run_mode" > "$RUN_MODE_FILE"
 else
     run_mode=$(cat "$RUN_MODE_FILE")
 fi
 
-#=== Основний цикл перезапуску кожну годину ===
+#=== Основний цикл перезапуску ===
 while true; do
     echo "[+] Зупинка модуля..."
     pkill -f "$MODULE" 2>/dev/null || screen -S "$MODULE_NAME" -X quit 2>/dev/null || true
     sleep 3
 
-    echo "[+] Вимкнення всіх WG інтерфейсів..."
-    ACTIVE_WG=$(wg show interfaces 2>/dev/null)
+    echo "[+] Відключення всіх WG інтерфейсів..."
+    ACTIVE_WG=$(wg show interfaces 2>/dev/null || true)
     for iface in $ACTIVE_WG; do
-        wg-quick down "$iface" || true
+        $SUDO wg-quick down "$iface" || true
         sleep 1
     done
 
@@ -126,20 +149,18 @@ while true; do
     WG_IFACES=()
     for conf in "${WG_FILES[@]}"; do
         IFACE_NAME=$(basename "$conf" .conf)
-        wg-quick up "$conf" && echo "[+] Підключено: $conf"
+        $SUDO wg-quick up "$conf" && echo "[+] Підключено: $conf"
         WG_IFACES+=("$IFACE_NAME")
         sleep 1
     done
 
-    echo "[+] Запуск модуля заново..."
+    echo "[+] Запуск модуля..."
     if [[ $run_mode == "1" ]]; then
         screen -dmS "$MODULE_NAME" $MODULE $ARGS
     elif [[ $run_mode == "2" ]]; then
-        screen -S "$MODULE_NAME" $MODULE $ARGS
-    elif [[ $run_mode == "3" ]]; then
         $MODULE $ARGS
     fi
 
-    echo "[+] Очікування 59 хвилин перед наступним перезапуском..."
+    echo "[+] Очікування 59 хвилин..."
     sleep 3540
 done
