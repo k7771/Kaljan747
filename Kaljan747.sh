@@ -65,27 +65,38 @@ if ! compgen -G "$WG_DIR/*.conf" > /dev/null; then
 fi
 
 #=== Зупинка попередніх WG-тунелів ===
-echo "[+] Вимкнення попередніх WG-тунелів..."
-ACTIVE_WG=$(wg show interfaces 2>/dev/null)
-for iface in $ACTIVE_WG; do
-    sudo wg-quick down "$iface" && echo "[-] Вимкнено: $iface"
-done
+echo "[+] Перевірка наявності wg-quick..."
+if command -v wg-quick >/dev/null 2>&1; then
+    echo "[+] Вимкнення попередніх WG-тунелів..."
+    ACTIVE_WG=$(wg show interfaces 2>/dev/null)
+    for iface in $ACTIVE_WG; do
+        wg-quick down "$iface" && echo "[-] Вимкнено: $iface"
+    done
+else
+    echo "[-] wg-quick не знайдено. Пропускаємо тунелі."
+fi
 
 #=== Завантаження модулів ===
 echo "[+] Перевірка наявності модулів..."
 [ -f "$MODULE_DIR/mhddos_proxy" ] || wget -qO "$MODULE_DIR/mhddos_proxy" https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux
 [ -f "$MODULE_DIR/distress" ] || wget -qO "$MODULE_DIR/distress" https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl
 
+chmod +x "$MODULE_DIR/mhddos_proxy" "$MODULE_DIR/distress"
+
 #=== Рандомний вибір WG-конфігів і запуск ===
 echo "[+] Випадковий вибір 4 WireGuard конфігів з $WG_DIR..."
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
 WG_IFACES=()
 
-for conf in "${WG_FILES[@]}"; do
-    sudo wg-quick up "$conf" || echo "[-] Не вдалося підключити $conf"
-    iface=$(basename "$conf" .conf)
-    WG_IFACES+=("$iface")
-done
+if command -v wg-quick >/dev/null 2>&1; then
+    for conf in "${WG_FILES[@]}"; do
+        wg-quick up "$conf" || echo "[-] Не вдалося підключити $conf"
+        iface=$(basename "$conf" .conf)
+        WG_IFACES+=("$iface")
+    done
+else
+    echo "[-] wg-quick не знайдено. Пропускаємо підключення WG."
+fi
 
 #=== Вибір модуля ===
 CONFIG_CHOICE_FILE="last_module_choice.txt"
@@ -186,3 +197,7 @@ fi
 
 #=== Автоматичне очищення вибору при ручному завершенні ===
 trap 'echo "[!] Скрипт завершено вручну. Видаляємо last_module_choice.txt..."; rm -f "$CONFIG_CHOICE_FILE" "$RUN_MODE_FILE"; exit 0' INT
+
+#=== Автоматичний перезапуск скрипта щогодини ===
+echo "[+] Автоматичний перезапуск через 1 годину..."
+sleep $(($(date -d 'next hour' +%s) - $(date +%s) - 60)) && exec "$SCRIPT_PATH" &
