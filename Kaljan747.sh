@@ -205,7 +205,3 @@ fi
 
 #=== Автоматичне очищення вибору при ручному завершенні ===
 trap 'echo "[!] Скрипт завершено вручну. Видаляємо last_module_choice.txt..."; rm -f "$CONFIG_CHOICE_FILE" "$RUN_MODE_FILE"; exit 0' INT
-
-#=== Автоматичний перезапуск скрипта щогодини ===
-echo "[+] Автоматичний перезапуск через 1 годину..."
-sleep $(($(date -d 'next hour' +%s) - $(date +%s) - 60)) && exec "$SCRIPT_PATH" &
