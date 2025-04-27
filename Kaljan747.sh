@@ -70,7 +70,11 @@ if command -v wg-quick >/dev/null 2>&1; then
     echo "[+] Вимкнення попередніх WG-тунелів..."
     ACTIVE_WG=$(wg show interfaces 2>/dev/null)
     for iface in $ACTIVE_WG; do
-        wg-quick down "$iface" && echo "[-] Вимкнено: $iface"
+    if [ -f "$WG_DIR/$iface.conf" ]; then
+        wg-quick down "$WG_DIR/$iface.conf" && echo "[-] Вимкнено: $iface"
+    else
+        echo "[-] Конфіг $WG_DIR/$iface.conf не знайдено. Пропускаємо."
+    fi
     done
 else
     echo "[-] wg-quick не знайдено. Пропускаємо тунелі."
@@ -90,7 +94,11 @@ WG_IFACES=()
 
 if command -v wg-quick >/dev/null 2>&1; then
     for conf in "${WG_FILES[@]}"; do
+    if [ -f "$conf" ]; then
         wg-quick up "$conf" || echo "[-] Не вдалося підключити $conf"
+    else
+        echo "[-] Конфіг $conf не знайдено. Пропускаємо."
+    fi
         iface=$(basename "$conf" .conf)
         WG_IFACES+=("$iface")
     done
