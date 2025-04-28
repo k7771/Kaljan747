@@ -76,7 +76,7 @@ done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# === Функція запуску модуля через xterm + screen з правильними кольорами ===
+# === Функція запуску модуля через xterm + screen з керуванням ===
 launch_module_and_monitor() {
     local MODULE_NAME="$1"
     local MODULE="$2"
@@ -90,6 +90,24 @@ launch_module_and_monitor() {
 
     # Вікно з модулем
     xterm -T "Kaljan747 Модуль: $MODULE_NAME" -bg black -fg green +sb -fa 'Monospace' -fs 11 -e "screen -r $MODULE_NAME" &
+
+    sleep 1
+
+    # Пульт керування модулем
+    (
+    while true; do
+        ACTION=$(zenity --width=300 --height=150 --title="Керування модулем" --question --text="Оберіть дію:" --ok-label="Згорнути" --cancel-label="Зупинити")
+        if [ $? -eq 0 ]; then
+            screen -S "$MODULE_NAME" -X detach
+            exit 0
+        else
+            screen -S "$MODULE_NAME" -X stuff "^C"
+            sleep 2
+            screen -S "$MODULE_NAME" -X quit
+            exit 0
+        fi
+    done
+    ) &
 
     sleep 1
 
