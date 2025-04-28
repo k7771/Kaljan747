@@ -2,6 +2,112 @@
 
 set -e
 
+SETTINGS_FILE="$HOME/.kaljan747_settings"
+
+# === Функція запиту USER-ID ===
+ask_user_id() {
+    if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
+        USER_ID=$(zenity --entry --title="Введення USER-ID" --text="Введіть ваш user-id (тільки цифри):" --width=400)
+    else
+        read -p "Введіть ваш user-id (тільки цифри): " USER_ID
+    fi
+}
+
+# === Функція запиту параметрів запуску ===
+ask_run_parameters() {
+    if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
+        USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація" \
+            --text="Вкажіть параметри запуску" \
+            --add-combo="Модуль" --combo-values="mhddos_proxy|distress" \
+            --add-combo="Редагувати INI перед запуском?" --combo-values="Так|Ні" \
+            --add-combo="Режим запуску" --combo-values="screen у фоні|screen відкрито|без screen" \
+            --width=400)
+        [ -z "$USER_SELECTION" ] && { echo "Запуск скасовано"; exit 1; }
+        IFS="|" read -r SELECTED_MODULE EDIT_INI SELECTED_RUN_MODE <<< "$USER_SELECTION"
+    else
+        echo "Виберіть модуль:"
+        echo "1) mhddos_proxy"
+        echo "2) distress"
+        read -p "Ваш вибір (1/2): " mod_choice
+        SELECTED_MODULE=$( [ "$mod_choice" = "1" ] && echo "mhddos_proxy" || echo "distress" )
+
+        echo "Редагувати INI перед запуском?"
+        echo "1) Так"
+        echo "2) Ні"
+        read -p "Ваш вибір (1/2): " edit_choice
+        EDIT_INI=$( [ "$edit_choice" = "1" ] && echo "Так" || echo "Ні" )
+
+        echo "Виберіть режим запуску:"
+        echo "1) screen у фоні"
+        echo "2) screen відкрито"
+        echo "3) без screen"
+        read -p "Ваш вибір (1/2/3): " run_choice
+        case "$run_choice" in
+            1) SELECTED_RUN_MODE="screen у фоні";;
+            2) SELECTED_RUN_MODE="screen відкрито";;
+            3) SELECTED_RUN_MODE="без screen";;
+        esac
+    fi
+}
+
+# === Завантаження або запит налаштувань ===
+if [ -f "$SETTINGS_FILE" ]; then
+    if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
+        zenity --question --title="Налаштування" --text="Використати збережені налаштування?" --ok-label="Так" --cancel-label="Ні"
+        USE_OLD=$?
+    else
+        echo "Знайдено збережені налаштування:"
+        echo "1) Використати старі"
+        echo "2) Ввести нові"
+        read -p "Ваш вибір (1/2): " choice
+        if [ "$choice" = "1" ]; then
+            USE_OLD=0
+        else
+            USE_OLD=1
+        fi
+    fi
+
+    if [ "$USE_OLD" -eq 0 ]; then
+        source "$SETTINGS_FILE"
+    else
+        USER_ID=""
+        SELECTED_MODULE=""
+        EDIT_INI=""
+        SELECTED_RUN_MODE=""
+    fi
+fi
+
+if [ -z "$USER_ID" ]; then
+    while true; do
+        ask_user_id
+        if [ -z "$USER_ID" ]; then
+            echo "User-id обов'язковий. Завершення."
+            exit 1
+        fi
+        if [[ "$USER_ID" =~ ^[0-9]+$ ]]; then
+            break
+        else
+            if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
+                zenity --error --text="Помилка: USER-ID має містити тільки цифри!" --width=400
+            else
+                echo "Помилка: USER-ID має містити тільки цифри!"
+            fi
+        fi
+    done
+fi
+
+if [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" ]; then
+    ask_run_parameters
+fi
+
+# === Збереження налаштувань у файл ===
+cat > "$SETTINGS_FILE" <<EOF
+USER_ID="$USER_ID"
+SELECTED_MODULE="$SELECTED_MODULE"
+EDIT_INI="$EDIT_INI"
+SELECTED_RUN_MODE="$SELECTED_RUN_MODE"
+EOF
+
 # === Перевірка прав користувача ===
 if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
@@ -9,7 +115,8 @@ else
     if command -v sudo >/dev/null 2>&1; then
         SUDO="sudo"
     else
-        echo "sudo не знайдено. Встановіть або увійдіть як root."; exit 1
+        echo "sudo не знайдено. Встановіть або увійдіть як root."
+        exit 1
     fi
 fi
 
@@ -24,51 +131,15 @@ elif command -v yum >/dev/null 2>&1; then
 elif command -v apk >/dev/null 2>&1; then
     $SUDO apk add curl wget git screen sed wireguard-tools zenity
 else
-    echo "Підтримуваний пакетний менеджер не знайдено."; exit 1
+    echo "Підтримуваний пакетний менеджер не знайдено."
+    exit 1
 fi
 
+# === Підготовка директорій ===
 MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
 touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
-
-# === Запит параметрів запуску ===
-if [ -z "$DISPLAY" ]; then
-    echo "Zenity недоступний. Текстовий режим."
-
-    echo "Виберіть модуль:"
-    echo "1) mhddos_proxy"
-    echo "2) distress"
-    read -p "Ваш вибір (1/2): " mod_choice
-    SELECTED_MODULE=$( [ "$mod_choice" = "1" ] && echo "mhddos_proxy" || echo "distress" )
-
-    echo "Редагувати INI перед запуском?"
-    echo "1) Так"
-    echo "2) Ні"
-    read -p "Ваш вибір (1/2): " edit_choice
-    EDIT_INI=$( [ "$edit_choice" = "1" ] && echo "Так" || echo "Ні" )
-
-    echo "Виберіть режим запуску:"
-    echo "1) screen у фоні"
-    echo "2) screen відкрито"
-    echo "3) без screen"
-    read -p "Ваш вибір (1/2/3): " run_choice
-    case "$run_choice" in
-        1) SELECTED_RUN_MODE="screen у фоні";;
-        2) SELECTED_RUN_MODE="screen відкрито";;
-        3) SELECTED_RUN_MODE="без screen";;
-    esac
-else
-    USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація" \
-        --text="Вкажіть параметри запуску" \
-        --add-combo="Модуль" --combo-values="mhddos_proxy|distress" \
-        --add-combo="Редагувати INI перед запуском?" --combo-values="Так|Ні" \
-        --add-combo="Режим запуску" --combo-values="screen у фоні|screen відкрито|без screen")
-
-    [ -z "$USER_SELECTION" ] && { echo "Запуск скасовано"; exit 1; }
-
-    IFS="|" read -r SELECTED_MODULE EDIT_INI SELECTED_RUN_MODE <<< "$USER_SELECTION"
-fi
 
 # === Вибір модуля ===
 case "$SELECTED_MODULE" in
@@ -121,8 +192,8 @@ VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 
 # === Оновлення ini файлів ===
-echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=********" > "$MODULE_DIR/mhddos.ini"
-echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=********" > "$MODULE_DIR/distress.ini"
+echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
+echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
 
 if [ "$EDIT_INI" = "Так" ]; then
     if [ -n "$DISPLAY" ]; then
