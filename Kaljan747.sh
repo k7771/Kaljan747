@@ -2,7 +2,7 @@
 
 set -e
 
-# Перевірка користувача
+# === Перевірка прав користувача ===
 if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
 else
@@ -13,41 +13,25 @@ else
     fi
 fi
 
-# Визначення пакетного менеджера
+# === Визначення пакетного менеджера та встановлення залежностей ===
 if command -v apt >/dev/null 2>&1; then
-    PKG_MANAGER="apt"
-    UPDATE_CMD="$SUDO apt update -y"
-    INSTALL_CMD="$SUDO apt install -y"
-elif command -v apt-get >/dev/null 2>&1; then
-    PKG_MANAGER="apt-get"
-    UPDATE_CMD="$SUDO apt-get update -y"
-    INSTALL_CMD="$SUDO apt-get install -y"
+    $SUDO apt update -y
+    $SUDO apt install -y curl wget git screen sed wireguard zenity x11-utils
 elif command -v dnf >/dev/null 2>&1; then
-    PKG_MANAGER="dnf"
-    UPDATE_CMD="$SUDO dnf check-update || true"
-    INSTALL_CMD="$SUDO dnf install -y"
+    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity xorg-x11-utils
 elif command -v yum >/dev/null 2>&1; then
-    PKG_MANAGER="yum"
-    UPDATE_CMD="$SUDO yum check-update || true"
-    INSTALL_CMD="$SUDO yum install -y"
+    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity xorg-x11-utils
 elif command -v apk >/dev/null 2>&1; then
-    PKG_MANAGER="apk"
-    UPDATE_CMD="$SUDO apk update"
-    INSTALL_CMD="$SUDO apk add"
+    $SUDO apk add curl wget git screen sed wireguard-tools zenity x11-utils
 else
     zenity --error --text="Підтримуваний пакетний менеджер не знайдено."; exit 1
 fi
 
-# Встановлення залежностей
-$UPDATE_CMD
-$INSTALL_CMD curl wget git screen sed wireguard zenity
-
-# Підготовка директорій
 MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
 
-# Графічний інтерфейс вибору параметрів
+# === Графічний інтерфейс вибору налаштувань ===
 USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація" \
     --text="Вкажіть параметри запуску" \
     --add-combo="Модуль" --combo-values="mhddos_proxy|distress" \
@@ -60,29 +44,26 @@ MODULE_CHOICE=$(echo "$USER_SELECTION" | cut -d'|' -f1)
 EDIT_INI=$(echo "$USER_SELECTION" | cut -d'|' -f2)
 RUN_MODE=$(echo "$USER_SELECTION" | cut -d'|' -f3)
 
-# Вибір модуля
+# === Вибір модуля ===
 case $MODULE_CHOICE in
     mhddos_proxy)
         MODULE="$MODULE_DIR/mhddos_proxy"
         CONFIG_FILE="$MODULE_DIR/mhddos.ini"
         MODULE_NAME="mhddos"
         DOWNLOAD_LINK="https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
-        PARAM="--ifaces"
         ;;
     distress)
         MODULE="$MODULE_DIR/distress"
         CONFIG_FILE="$MODULE_DIR/distress.ini"
         MODULE_NAME="distress"
         DOWNLOAD_LINK="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
-        PARAM="--interface"
         ;;
 esac
 
-# Завантаження модулів
 [ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
 chmod +x "$MODULE"
 
-# Завантаження WG-конфігів
+# === Завантаження WG-конфігів ===
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed -e 's|^/|https://github.com/|' -e 's|blob/|raw/|')
@@ -94,7 +75,54 @@ done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# Основний цикл перезапуску
+# === Функція запуску та виводу екрану в Zenity ===
+show_screen_in_zenity() {
+    local MODULE_NAME="$1"
+    local MODULE="$2"
+    local CONFIG_FILE="$3"
+
+    screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat \"$CONFIG_FILE\")"
+    sleep 2
+
+    (
+      while true; do
+        screen -S "$MODULE_NAME" -X hardcopy /tmp/${MODULE_NAME}_current.log
+        sleep 1
+      done
+    ) &
+    LOG_UPDATER_PID=$!
+
+    while true; do
+      ACTION=$(zenity --width=$(xdpyinfo | awk '/dimensions/{print int($2*0.9)}') \
+        --height=600 \
+        --title="Kaljan747: $MODULE_NAME" \
+        --text-info \
+        --filename="/tmp/${MODULE_NAME}_current.log" \
+        --ok-label="Оновити" \
+        --extra-button="Згорнути" \
+        --extra-button="Вимкнути")
+
+      case "$ACTION" in
+        "Згорнути")
+          screen -S "$MODULE_NAME" -X detach
+          kill "$LOG_UPDATER_PID"
+          break
+          ;;
+        "Вимкнути")
+          screen -S "$MODULE_NAME" -X stuff "^C"
+          sleep 2
+          screen -S "$MODULE_NAME" -X quit
+          kill "$LOG_UPDATER_PID"
+          break
+          ;;
+        *)
+          # Просто оновлення
+          ;;
+      esac
+    done
+}
+
+# === Основний цикл перезапуску ===
 while true; do
     pkill -f "$MODULE" 2>/dev/null || screen -S "$MODULE_NAME" -X quit 2>/dev/null || true
 
@@ -118,9 +146,12 @@ while true; do
     [ "$EDIT_INI" = "Так" ] && zenity --text-info --editable --filename="$CONFIG_FILE" --title="Редагування $CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
 
     case "$RUN_MODE" in
-        "screen у фоні") screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
-        "screen відкрито") screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
-        "без screen") "$MODULE" $(cat "$CONFIG_FILE") ;;
+        "screen у фоні"|"screen відкрито")
+            show_screen_in_zenity "$MODULE_NAME" "$MODULE" "$CONFIG_FILE"
+            ;;
+        "без screen")
+            "$MODULE" $(cat "$CONFIG_FILE")
+            ;;
     esac
 
     sleep 3540
