@@ -32,37 +32,11 @@ WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
 touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
 
-# === Графічний інтерфейс вибору налаштувань ===
-USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація" \
-    --text="Вкажіть параметри запуску" \
-    --add-combo="Модуль" --combo-values="mhddos_proxy|distress" \
-    --add-combo="Редагувати INI перед запуском?" --combo-values="Так|Ні" \
-    --add-combo="Режим запуску" --combo-values="screen у фоні|screen відкрито|без screen")
-
-[ -z "$USER_SELECTION" ] && { zenity --error --text="Запуск скасовано"; exit 1; }
-
-MODULE_CHOICE=$(echo "$USER_SELECTION" | cut -d'|' -f1)
-EDIT_INI=$(echo "$USER_SELECTION" | cut -d'|' -f2)
-RUN_MODE=$(echo "$USER_SELECTION" | cut -d'|' -f3)
-
-# === Вибір модуля ===
-case $MODULE_CHOICE in
-    mhddos_proxy)
-        MODULE="$MODULE_DIR/mhddos_proxy"
-        CONFIG_FILE="$MODULE_DIR/mhddos.ini"
-        MODULE_NAME="mhddos"
-        DOWNLOAD_LINK="https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
-        ;;
-    distress)
-        MODULE="$MODULE_DIR/distress"
-        CONFIG_FILE="$MODULE_DIR/distress.ini"
-        MODULE_NAME="distress"
-        DOWNLOAD_LINK="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
-        ;;
-esac
-
-[ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
-chmod +x "$MODULE"
+MODULE_NAME="mhddos"
+MODULE="$MODULE_DIR/mhddos_proxy"
+CONFIG_FILE="$MODULE_DIR/mhddos.ini"
+RUN_MODE="screen у фоні"
+MONITORING=1
 
 # === Завантаження WG-конфігів ===
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
@@ -76,37 +50,8 @@ done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# === Функція запуску модуля через xterm + screen з керуванням і tmux моніторингом ===
-launch_module_and_monitor() {
-    local MODULE_NAME="$1"
-    local MODULE="$2"
-    local CONFIG_FILE="$3"
-
-    [ -f "$CONFIG_FILE" ] || { zenity --error --text="Файл $CONFIG_FILE не знайдено!"; exit 1; }
-
-    screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat $CONFIG_FILE)"
-
-    sleep 2
-
-    xterm -T "Kaljan747 Модуль: $MODULE_NAME" -bg black -fg green +sb -fa 'Monospace' -fs 11 -e "screen -r $MODULE_NAME" &
-
-    (
-    while true; do
-        ACTION=$(zenity --width=300 --height=150 --title="Керування модулем" --question --text="Оберіть дію:" --ok-label="Згорнути" --cancel-label="Зупинити")
-        if [ $? -eq 0 ]; then
-            screen -S "$MODULE_NAME" -X detach
-            exit 0
-        else
-            screen -S "$MODULE_NAME" -X stuff "^C"
-            sleep 2
-            screen -S "$MODULE_NAME" -X quit
-            exit 0
-        fi
-    done
-    ) &
-
-    sleep 1
-
+# === Функція запуску моніторингу через tmux ===
+launch_monitoring() {
     xterm -T "Kaljan747 Моніторинг" -bg black -fg white +sb -fa 'Monospace' -fs 11 -e "bash -c '
     tmux new-session -d \"htop\"
     tmux split-window -h \"iftop -i \\$(ip route | grep default | awk \\\"{print \\\\$5}\\\")\"
@@ -115,10 +60,23 @@ launch_module_and_monitor() {
     '" &
 }
 
-# === Основний цикл перезапуску ===
-while true; do
-    pkill -f "$MODULE" 2>/dev/null || screen -S "$MODULE_NAME" -X quit 2>/dev/null || true
+# === Функція запуску модуля ===
+launch_module() {
+    screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat $CONFIG_FILE)"
+    if [ "$MONITORING" -eq 1 ]; then
+        launch_monitoring
+    fi
+}
 
+# === Функція зупинки модуля ===
+stop_module() {
+    screen -S "$MODULE_NAME" -X stuff "^C"
+    sleep 2
+    screen -S "$MODULE_NAME" -X quit
+}
+
+# === Функція перезавантаження WG ===
+restart_wg() {
     for iface in $(wg show interfaces 2>/dev/null); do
         $SUDO wg-quick down "$iface" || true
         $SUDO ip link delete "$iface" || true
@@ -137,17 +95,72 @@ while true; do
 
     echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=********" > "$MODULE_DIR/mhddos.ini"
     echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=********" > "$MODULE_DIR/distress.ini"
+}
 
-    [ "$EDIT_INI" = "Так" ] && zenity --text-info --editable --filename="$CONFIG_FILE" --title="Редагування $CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+# === Основний нескінченний цикл пульта ===
+while true; do
+    ACTION=$(zenity --list --radiolist --width=400 --height=500 \
+        --title="Kaljan747 Пульт Управління" \
+        --text="Оберіть дію:" \
+        --column="Вибір" --column="Дія" \
+        FALSE "Вибрати модуль" \
+        FALSE "Редагувати INI" \
+        FALSE "Вибрати режим запуску" \
+        FALSE "Увімкнути моніторинг" \
+        FALSE "Вимкнути моніторинг" \
+        FALSE "Перезапустити модуль" \
+        FALSE "Згорнути модуль" \
+        FALSE "Зупинити модуль" \
+        FALSE "Вийти")
 
-    case "$RUN_MODE" in
-        "screen у фоні"|"screen відкрито")
-            launch_module_and_monitor "$MODULE_NAME" "$MODULE" "$CONFIG_FILE"
+    case "$ACTION" in
+        "Вибрати модуль")
+            stop_module
+            restart_wg
+            MODULE_CHOICE=$(zenity --list --radiolist --title="Вибір модуля" --column="Вибір" --column="Модуль" FALSE "mhddos_proxy" FALSE "distress")
+            case "$MODULE_CHOICE" in
+                "mhddos_proxy")
+                    MODULE_NAME="mhddos"
+                    MODULE="$MODULE_DIR/mhddos_proxy"
+                    CONFIG_FILE="$MODULE_DIR/mhddos.ini"
+                    ;;
+                "distress")
+                    MODULE_NAME="distress"
+                    MODULE="$MODULE_DIR/distress"
+                    CONFIG_FILE="$MODULE_DIR/distress.ini"
+                    ;;
+            esac
+            launch_module
             ;;
-        "без screen")
-            "$MODULE" $(cat "$CONFIG_FILE")
+        "Редагувати INI")
+            if zenity --question --text="Редагувати INI вручну?"; then
+                zenity --text-info --editable --filename="$CONFIG_FILE" --title="Редагування INI" > "$CONFIG_FILE.tmp"
+                mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+            fi
+            ;;
+        "Вибрати режим запуску")
+            RUN_MODE=$(zenity --list --radiolist --title="Режим запуску" --column="Вибір" --column="Режим" FALSE "screen у фоні" FALSE "screen відкрито" FALSE "без screen")
+            ;;
+        "Увімкнути моніторинг")
+            MONITORING=1
+            ;;
+        "Вимкнути моніторинг")
+            MONITORING=0
+            ;;
+        "Перезапустити модуль")
+            stop_module
+            restart_wg
+            launch_module
+            ;;
+        "Згорнути модуль")
+            screen -S "$MODULE_NAME" -X detach
+            ;;
+        "Зупинити модуль")
+            stop_module
+            ;;
+        "Вийти")
+            exit 0
             ;;
     esac
 
-    sleep 3540
 done
