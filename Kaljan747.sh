@@ -2,138 +2,126 @@
 
 set -e
 
-# === Перевірка sudo ===
-if [ "$(id -u)" -eq 0 ]; then
-    SUDO=""
-else
-    if command -v sudo >/dev/null 2>&1; then
-        SUDO="sudo"
-    else
-        echo "sudo не знайдено. Встановіть або увійдіть як root."; exit 1
-    fi
+=== Перевірка sudo ===
+
+if [ "$(id -u)" -eq 0 ]; then SUDO="" else if command -v sudo >/dev/null 2>&1; then SUDO="sudo" else echo "sudo не знайдено. Встановіть або увійдіть як root."; exit 1 fi fi
+
+=== Встановлення залежностей ===
+
+if command -v apt >/dev/null 2>&1; then $SUDO apt update -y $SUDO apt install -y curl wget git screen sed wireguard zenity elif command -v dnf >/dev/null 2>&1; then $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity elif command -v yum >/dev/null 2>&1; then $SUDO yum install -y curl wget git screen sed wireguard-tools zenity elif command -v apk >/dev/null 2>&1; then $SUDO apk add curl wget git screen sed wireguard-tools zenity else echo "Підтримуваний пакетний менеджер не знайдено."; exit 1 fi
+
+MODULE_DIR="$HOME/modules" WG_DIR="$HOME/wg_confs" mkdir -p "$MODULE_DIR" "$WG_DIR" touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
+
+MODULE_NAME="mhddos" MODULE="$MODULE_DIR/mhddos_proxy" CONFIG_FILE="$MODULE_DIR/mhddos.ini"
+
+=== Запит параметрів ===
+
+if [ -z "$DISPLAY" ]; then echo "Zenity недоступний. Переходимо в текстовий режим."
+
+echo "Виберіть модуль:"
+echo "1) mhddos_proxy"
+echo "2) distress"
+read -p "Ваш вибір (1/2): " mod_choice
+SELECTED_MODULE=$( [ "$mod_choice" = "1" ] && echo "mhddos_proxy" || echo "distress" )
+
+echo "Редагувати INI перед запуском?"
+echo "1) Так"
+echo "2) Ні"
+read -p "Ваш вибір (1/2): " edit_choice
+EDIT_INI=$( [ "$edit_choice" = "1" ] && echo "Так" || echo "Ні" )
+
+echo "Виберіть режим запуску:"
+echo "1) screen у фоні"
+echo "2) screen відкрито"
+echo "3) без screen"
+read -p "Ваш вибір (1/2/3): " run_choice
+case "$run_choice" in
+    1) SELECTED_RUN_MODE="screen у фоні";;
+    2) SELECTED_RUN_MODE="screen відкрито";;
+    3) SELECTED_RUN_MODE="без screen";;
+esac
+
+echo "Перезапустити модуль?"
+echo "1) Так"
+echo "2) Ні"
+read -p "Ваш вибір (1/2): " restart_choice
+RESTART_SCREEN=$( [ "$restart_choice" = "1" ] && echo "Так" || echo "Ні" )
+
+echo "Згорнути модуль?"
+echo "1) Так"
+echo "2) Ні"
+read -p "Ваш вибір (1/2): " detach_choice
+DETACH_SCREEN=$( [ "$detach_choice" = "1" ] && echo "Так" || echo "Ні" )
+
+echo "Зупинити модуль?"
+echo "1) Так"
+echo "2) Ні"
+read -p "Ваш вибір (1/2): " stop_choice
+STOP_SCREEN=$( [ "$stop_choice" = "1" ] && echo "Так" || echo "Ні" )
+
+echo "Вийти?"
+echo "1) Так"
+echo "2) Ні"
+read -p "Ваш вибір (1/2): " exit_choice
+EXIT_SCRIPT=$( [ "$exit_choice" = "1" ] && echo "Так" || echo "Ні" )
+
+else USER_SELECTION=$(zenity --forms --title="Kaljan747 Пульт Управління" 
+--text="Виберіть параметри:" 
+--add-combo="Модуль" --combo-values="mhddos_proxy|distress" 
+--add-combo="Редагувати INI перед запуском?" --combo-values="Так|Ні" 
+--add-combo="Режим запуску" --combo-values="screen у фоні|screen відкрито|без screen" 
+--add-combo="Перезапустити модуль?" --combo-values="Так|Ні" 
+--add-combo="Згорнути модуль?" --combo-values="Так|Ні" 
+--add-combo="Зупинити модуль?" --combo-values="Так|Ні" 
+--add-combo="Вийти?" --combo-values="Так|Ні")
+
+[ $? -ne 0 ] && exit 0
+
+IFS="|" read -r SELECTED_MODULE EDIT_INI SELECTED_RUN_MODE RESTART_SCREEN DETACH_SCREEN STOP_SCREEN EXIT_SCRIPT <<< "$USER_SELECTION"
+
 fi
 
-# === Встановлення залежностей ===
-if command -v apt >/dev/null 2>&1; then
-    $SUDO apt update -y
-    $SUDO apt install -y curl wget git screen sed wireguard zenity
-elif command -v dnf >/dev/null 2>&1; then
-    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity
-elif command -v yum >/dev/null 2>&1; then
-    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity
-elif command -v apk >/dev/null 2>&1; then
-    $SUDO apk add curl wget git screen sed wireguard-tools zenity
-else
-    echo "Підтримуваний пакетний менеджер не знайдено."; exit 1
-fi
+if [ "$EXIT_SCRIPT" = "Так" ]; then exit 0 fi
 
-MODULE_DIR="$HOME/modules"
-WG_DIR="$HOME/wg_confs"
-mkdir -p "$MODULE_DIR" "$WG_DIR"
-touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
+=== Функції ===
 
-MODULE_NAME="mhddos"
-MODULE="$MODULE_DIR/mhddos_proxy"
-CONFIG_FILE="$MODULE_DIR/mhddos.ini"
+stop_module() { screen -S "$MODULE_NAME" -X stuff "^C" sleep 2 screen -S "$MODULE_NAME" -X quit }
 
-# === Запит параметрів ===
-if [ -z "$DISPLAY" ]; then
-    echo "Zenity недоступний. Переходимо в текстовий режим."
-    read -p "Вибрати модуль (mhddos_proxy/distress): " SELECTED_MODULE
-    read -p "Редагувати INI перед запуском? (Так/Ні): " EDIT_INI
-    read -p "Режим запуску (screen у фоні/screen відкрито/без screen): " SELECTED_RUN_MODE
-    read -p "Перезапустити модуль? (Так/Ні): " RESTART_SCREEN
-    read -p "Згорнути модуль? (Так/Ні): " DETACH_SCREEN
-    read -p "Зупинити модуль? (Так/Ні): " STOP_SCREEN
-    read -p "Вийти? (Так/Ні): " EXIT_SCRIPT
-else
-    USER_SELECTION=$(zenity --forms --title="Kaljan747 Пульт Управління" \
-        --text="Виберіть параметри:" \
-        --add-combo="Модуль" --combo-values="mhddos_proxy|distress" \
-        --add-combo="Редагувати INI перед запуском?" --combo-values="Так|Ні" \
-        --add-combo="Режим запуску" --combo-values="screen у фоні|screen відкрито|без screen" \
-        --add-combo="Перезапустити модуль?" --combo-values="Так|Ні" \
-        --add-combo="Згорнути модуль?" --combo-values="Так|Ні" \
-        --add-combo="Зупинити модуль?" --combo-values="Так|Ні" \
-        --add-combo="Вийти?" --combo-values="Так|Ні")
+restart_wg_and_update_ini() { for iface in $(wg show interfaces 2>/dev/null); do $SUDO wg-quick down "$iface" || true $SUDO ip link delete "$iface" || true done
 
-    [ $? -ne 0 ] && exit 0
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
+WG_IFACES=()
+for conf in "${WG_FILES[@]}"; do
+    IFACE_NAME=$(basename "$conf" .conf)
+    $SUDO wg-quick up "$conf"
+    WG_IFACES+=("$IFACE_NAME")
+done
 
-    IFS="|" read -r SELECTED_MODULE EDIT_INI SELECTED_RUN_MODE RESTART_SCREEN DETACH_SCREEN STOP_SCREEN EXIT_SCRIPT <<< "$USER_SELECTION"
-fi
+VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
+VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 
-if [ "$EXIT_SCRIPT" = "Так" ]; then
-    exit 0
-fi
+echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=********" > "$MODULE_DIR/mhddos.ini"
+echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=********" > "$MODULE_DIR/distress.ini"
 
-# === Функції ===
-stop_module() {
-    screen -S "$MODULE_NAME" -X stuff "^C"
-    sleep 2
-    screen -S "$MODULE_NAME" -X quit
 }
 
-restart_wg_and_update_ini() {
-    for iface in $(wg show interfaces 2>/dev/null); do
-        $SUDO wg-quick down "$iface" || true
-        $SUDO ip link delete "$iface" || true
-    done
+=== Обробка вибору ===
 
-    WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
-    WG_IFACES=()
-    for conf in "${WG_FILES[@]}"; do
-        IFACE_NAME=$(basename "$conf" .conf)
-        $SUDO wg-quick up "$conf"
-        WG_IFACES+=("$IFACE_NAME")
-    done
+if [ "$STOP_SCREEN" = "Так" ]; then stop_module fi
 
-    VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
-    VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
+if [ "$DETACH_SCREEN" = "Так" ]; then screen -S "$MODULE_NAME" -X detach fi
 
-    echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=********" > "$MODULE_DIR/mhddos.ini"
-    echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=********" > "$MODULE_DIR/distress.ini"
-}
+if [ "$RESTART_SCREEN" = "Так" ]; then stop_module restart_wg_and_update_ini fi
 
-# === Обробка вибору ===
-if [ "$STOP_SCREEN" = "Так" ]; then
-    stop_module
-fi
+if [ "$SELECTED_MODULE" = "mhddos_proxy" ]; then MODULE_NAME="mhddos" MODULE="$MODULE_DIR/mhddos_proxy" CONFIG_FILE="$MODULE_DIR/mhddos.ini" else MODULE_NAME="distress" MODULE="$MODULE_DIR/distress" CONFIG_FILE="$MODULE_DIR/distress.ini" fi
 
-if [ "$DETACH_SCREEN" = "Так" ]; then
-    screen -S "$MODULE_NAME" -X detach
-fi
-
-if [ "$RESTART_SCREEN" = "Так" ]; then
-    stop_module
-    restart_wg_and_update_ini
-fi
-
-if [ "$SELECTED_MODULE" = "mhddos_proxy" ]; then
-    MODULE_NAME="mhddos"
-    MODULE="$MODULE_DIR/mhddos_proxy"
-    CONFIG_FILE="$MODULE_DIR/mhddos.ini"
-else
-    MODULE_NAME="distress"
-    MODULE="$MODULE_DIR/distress"
-    CONFIG_FILE="$MODULE_DIR/distress.ini"
-fi
-
-if [ "$EDIT_INI" = "Так" ]; then
-    if [ -n "$DISPLAY" ]; then
-        zenity --text-info --editable --filename="$CONFIG_FILE" --title="Редагування INI" > "$CONFIG_FILE.tmp"
-        mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
-    else
-        nano "$CONFIG_FILE"
-    fi
-fi
+if [ "$EDIT_INI" = "Так" ]; then if [ -n "$DISPLAY" ]; then zenity --text-info --editable --filename="$CONFIG_FILE" --title="Редагування INI" > "$CONFIG_FILE.tmp" mv "$CONFIG_FILE.tmp" "$CONFIG_FILE" else nano "$CONFIG_FILE" fi fi
 
 RUN_MODE="$SELECTED_RUN_MODE"
 
-# === Запуск модуля ===
-case "$RUN_MODE" in
-    "screen у фоні") screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
-    "screen відкрито") screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
-    "без screen") "$MODULE" $(cat "$CONFIG_FILE") & ;;
-esac
+=== Запуск модуля ===
+
+case "$RUN_MODE" in "screen у фоні") screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;; "screen відкрито") screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;; "без screen") "$MODULE" $(cat "$CONFIG_FILE") & ;; esac
 
 exit 0
+
