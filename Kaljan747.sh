@@ -12,7 +12,7 @@ else
         SUDO="sudo"
         echo "[+] sudo доступний."
     else
-        echo "[-] sudo не знайдено. Встановіть або увійдіть як root."
+        echo "[-] sudo не знайдено. Потрібно встановити або увійти як root."
         exit 1
     fi
 fi
@@ -55,7 +55,7 @@ WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 
 #=== Завантаження WG-конфігів ===
 echo "[+] Завантаження WG-конфігів..."
-CONF_LIST=$(curl -s "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed 's|^/|https://github.com/|g' | sed 's|blob/|raw/|' | sed "s|https://github.com/k7771/Kaljan747/raw/k7771/wg/|$WG_RAW_BASE/|g" | grep -E '\.conf$')
+CONF_LIST=$(curl -s "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed 's|^/|https://github.com/|g' | sed 's|blob/|raw/|' | sed "s|https://github.com/k7771/Kaljan747/raw/k7771/wg/|$WG_RAW_BASE/|g" | grep -E '\\.conf$')
 
 for url in $CONF_LIST; do
     file=$(basename "$url")
@@ -149,14 +149,14 @@ fi
 
 ARGS=$(cat "$CONFIG_FILE")
 
-#=== Запуск модуля ===
+#=== Запуск модуля (виправлено) ===
 echo "[+] Запуск модуля..."
 if [[ $run_mode == "1" ]]; then
-    screen -dmS "$MODULE_NAME" bash -c "$MODULE $ARGS"
+    screen -dmS "$MODULE_NAME" "$MODULE" $ARGS
 elif [[ $run_mode == "2" ]]; then
-    screen -S "$MODULE_NAME" bash -c "$MODULE $ARGS"
+    screen -S "$MODULE_NAME" "$MODULE" $ARGS
 elif [[ $run_mode == "3" ]]; then
-    bash -c "$MODULE $ARGS"
+    "$MODULE" $ARGS
 else
     echo "[-] Невірний вибір режиму запуску!"
     exit 1
