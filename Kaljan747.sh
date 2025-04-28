@@ -38,7 +38,6 @@ CONFIG_FILE="$MODULE_DIR/mhddos.ini"
 RUN_MODE="screen у фоні"
 MONITORING=1
 
-# === Функції ===
 launch_monitoring() {
     xterm -T "Kaljan747 Моніторинг" -bg black -fg white +sb -fa 'Monospace' -fs 11 -e "bash -c '
     tmux new-session -d \"htop\"
@@ -50,9 +49,9 @@ launch_monitoring() {
 
 launch_module() {
     case "$RUN_MODE" in
-        "screen у фоні") screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat $CONFIG_FILE)" ;;
-        "screen відкрито") screen -S "$MODULE_NAME" bash -c "$MODULE $(cat $CONFIG_FILE)" ;;
-        "без screen") bash -c "$MODULE $(cat $CONFIG_FILE)" ;;
+        "screen у фоні") screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat $CONFIG_FILE)" & ;;
+        "screen відкрито") screen -S "$MODULE_NAME" bash -c "$MODULE $(cat $CONFIG_FILE)" & ;;
+        "без screen") bash -c "$MODULE $(cat $CONFIG_FILE)" & ;;
     esac
     if [ "$MONITORING" -eq 1 ]; then
         launch_monitoring
@@ -65,7 +64,7 @@ stop_module() {
     screen -S "$MODULE_NAME" -X quit
 }
 
-restart_wg() {
+restart_wg_and_update_ini() {
     for iface in $(wg show interfaces 2>/dev/null); do
         $SUDO wg-quick down "$iface" || true
         $SUDO ip link delete "$iface" || true
@@ -86,7 +85,7 @@ restart_wg() {
     echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=********" > "$MODULE_DIR/distress.ini"
 }
 
-# === Основний цикл ===
+# === Основний нескінченний цикл ===
 while true; do
     USER_SELECTION=$(zenity --forms --title="Kaljan747 Пульт Управління" \
         --text="Виберіть параметри:" \
@@ -117,7 +116,7 @@ while true; do
 
     if [ "$RESTART_SCREEN" = "Так" ]; then
         stop_module
-        restart_wg
+        restart_wg_and_update_ini
     fi
 
     if [ "$SELECTED_MODULE" = "mhddos_proxy" ]; then
