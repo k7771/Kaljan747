@@ -96,7 +96,6 @@ MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
 
-SCRIPT_PATH="$(realpath "$0")"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 
@@ -174,13 +173,15 @@ while true; do
     echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS" > "$INI2"
 
     if [[ "$edit_ini" == "1" ]]; then
-        echo "[?] Відкриття mhddos.ini для редагування..."
-        sleep 1
-        nano "$INI1"
-
-        echo "[?] Відкриття distress.ini для редагування..."
-        sleep 1
-        nano "$INI2"
+        if [[ "$module_choice" == "1" ]]; then
+            echo "[?] Відкриття mhddos.ini для редагування..."
+            sleep 1
+            nano "$INI1"
+        elif [[ "$module_choice" == "2" ]]; then
+            echo "[?] Відкриття distress.ini для редагування..."
+            sleep 1
+            nano "$INI2"
+        fi
     else
         echo "[+] Редагування ini файлів пропущено."
     fi
