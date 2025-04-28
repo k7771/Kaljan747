@@ -7,7 +7,7 @@
 Щоб завантажити та налаштувати скрипт, виконайте наступну команду:
 
 ```bash
-curl -s https://raw.githubusercontent.com/k7771/Kaljan747/main/Kaljan747.sh | sed 's/\r//' > /usr/local/bin/kaljan && chmod +x /usr/local/bin/kaljan
+curl -s https://raw.githubusercontent.com/k7771/Kaljan747/k7771/Kaljan747.sh | sed 's/\r//' > /usr/local/bin/kaljan && chmod +x /usr/local/bin/kaljan
 ```
 ## Формати конфігураційних файлів
 ### Формат файлу mhddos.ini
