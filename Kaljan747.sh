@@ -94,50 +94,39 @@ restart_wg() {
 }
 
 while true; do
-    ACTION=$(zenity --list --radiolist --width=400 --height=500 \
-        --title="Kaljan747 Пульт Управління" \
-        --text="Оберіть дію:" \
-        --column="Вибір" --column="Дія" \
-        TRUE "Вибрати модуль" \
-        FALSE "Редагувати INI" \
-        FALSE "Вибрати режим запуску" \
-        FALSE "Моніторинг показати/приховати" \
-        FALSE "Перезапустити модуль" \
-        FALSE "Згорнути модуль" \
-        FALSE "Зупинити модуль" \
-        FALSE "Вийти")
+    ACTION=$(zenity --list --title="Kaljan747 Пульт Управління" --text="Оберіть дію:" --column="Дії" \
+        "Вибрати модуль" "Редагувати INI" "Вибрати режим запуску" "Моніторинг показати/приховати" \
+        "Перезапустити модуль" "Згорнути модуль" "Зупинити модуль" "Вийти")
 
     case "$ACTION" in
         "Вибрати модуль")
+            MOD=$(zenity --list --title="Вибір модуля" --column="Модуль" "mhddos_proxy" "distress")
             stop_module
             restart_wg
-            MODULE_CHOICE=$(zenity --list --radiolist --title="Вибір модуля" --column="Вибір" --column="Модуль" TRUE "mhddos_proxy" FALSE "distress")
-            case "$MODULE_CHOICE" in
-                "mhddos_proxy")
-                    MODULE_NAME="mhddos"
-                    MODULE="$MODULE_DIR/mhddos_proxy"
-                    CONFIG_FILE="$MODULE_DIR/mhddos.ini"
-                    ;;
-                "distress")
-                    MODULE_NAME="distress"
-                    MODULE="$MODULE_DIR/distress"
-                    CONFIG_FILE="$MODULE_DIR/distress.ini"
-                    ;;
-            esac
+            if [ "$MOD" = "mhddos_proxy" ]; then
+                MODULE_NAME="mhddos"
+                MODULE="$MODULE_DIR/mhddos_proxy"
+                CONFIG_FILE="$MODULE_DIR/mhddos.ini"
+            else
+                MODULE_NAME="distress"
+                MODULE="$MODULE_DIR/distress"
+                CONFIG_FILE="$MODULE_DIR/distress.ini"
+            fi
             launch_module
             ;;
         "Редагувати INI")
-            if zenity --question --text="Редагувати INI вручну?"; then
+            EDIT=$(zenity --list --title="Редагувати INI" --column="Опція" "Так" "Ні")
+            if [ "$EDIT" = "Так" ]; then
                 zenity --text-info --editable --filename="$CONFIG_FILE" --title="Редагування INI" > "$CONFIG_FILE.tmp"
                 mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
             fi
             ;;
         "Вибрати режим запуску")
-            RUN_MODE=$(zenity --list --radiolist --title="Режим запуску" --column="Вибір" --column="Режим" TRUE "screen у фоні" FALSE "screen відкрито" FALSE "без screen")
+            RUN_MODE=$(zenity --list --title="Режим запуску" --column="Режим" "screen у фоні" "screen відкрито" "без screen")
             ;;
         "Моніторинг показати/приховати")
-            MONITORING_CHOICE=$(zenity --list --radiolist --title="Моніторинг" --column="Вибір" --column="Опція" TRUE "Показати" FALSE "Приховати")
-            if [ "$MONITORING_CHOICE" = "Показати" ]; then
+            MONITOR=$(zenity --list --title="Моніторинг" --column="Опція" "Показати" "Приховати")
+            if [ "$MONITOR" = "Показати" ]; then
                 MONITORING=1
             else
                 MONITORING=0
@@ -159,3 +148,4 @@ while true; do
             ;;
     esac
 done
+
