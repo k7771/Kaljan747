@@ -110,7 +110,7 @@ $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 for iface in $(wg show interfaces 2>/dev/null); do
     $SUDO wg-quick down "$iface" || true
     $SUDO ip link delete "$iface" || true
-fi
+done
 
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
 WG_IFACES=()
