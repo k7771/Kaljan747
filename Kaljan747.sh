@@ -160,6 +160,7 @@ while true; do
     WG_IFACES=()
     for conf in "${WG_FILES[@]}"; do
         IFACE_NAME=$(basename "$conf" .conf)
+        $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
         $SUDO wg-quick up "$conf" && echo "[+] Підключено: $conf" || echo "[-] Не вдалося підключити: $conf"
         WG_IFACES+=("$IFACE_NAME")
         sleep 1
@@ -185,8 +186,6 @@ while true; do
     else
         echo "[+] Редагування ini файлів пропущено."
     fi
-
-    ARGS=$(<"$CONFIG_FILE")
 
     echo "[+] Запуск модуля..."
     if [[ $run_mode == "1" ]]; then
