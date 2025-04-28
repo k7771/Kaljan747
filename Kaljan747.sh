@@ -2,200 +2,112 @@
 
 set -e
 
-# === Автоматична підготовка для будь-якого Linux ===
+# Перевірка root/sudo
+[ "$(id -u)" -eq 0 ] && SUDO="" || SUDO="sudo"
 
-echo "[+] Перевірка користувача..."
-if [ "$(id -u)" -eq 0 ]; then
-    SUDO=""
-    echo "[+] Ви root. sudo не потрібен."
+# Пакетний менеджер та встановлення залежностей
+if command -v apt >/dev/null; then
+    $SUDO apt update -qq
+    $SUDO DEBIAN_FRONTEND=noninteractive apt install -y -qq curl wget git screen sed wireguard zenity
+elif command -v dnf >/dev/null; then
+    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity
+elif command -v yum >/dev/null; then
+    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity
+elif command -v apk >/dev/null; then
+    $SUDO apk add curl wget git screen sed wireguard-tools zenity
 else
-    if command -v sudo >/dev/null 2>&1; then
-        SUDO="sudo"
-        echo "[+] sudo доступний."
-    else
-        echo "[-] sudo не знайдено. Встановіть або увійдіть як root."
-        exit 1
-    fi
-fi
-
-echo "[+] Визначення пакетного менеджера..."
-if command -v apt >/dev/null 2>&1; then
-    PKG_MANAGER="apt"
-    UPDATE_CMD="$SUDO apt update -y"
-    INSTALL_CMD="$SUDO apt install -y"
-elif command -v apt-get >/dev/null 2>&1; then
-    PKG_MANAGER="apt-get"
-    UPDATE_CMD="$SUDO apt-get update -y"
-    INSTALL_CMD="$SUDO apt-get install -y"
-elif command -v dnf >/dev/null 2>&1; then
-    PKG_MANAGER="dnf"
-    UPDATE_CMD="$SUDO dnf check-update || true"
-    INSTALL_CMD="$SUDO dnf install -y"
-elif command -v yum >/dev/null 2>&1; then
-    PKG_MANAGER="yum"
-    UPDATE_CMD="$SUDO yum check-update || true"
-    INSTALL_CMD="$SUDO yum install -y"
-elif command -v apk >/dev/null 2>&1; then
-    PKG_MANAGER="apk"
-    UPDATE_CMD="$SUDO apk update"
-    INSTALL_CMD="$SUDO apk add"
-else
-    echo "[-] Підтримуваний пакетний менеджер не знайдено."
+    zenity --error --text="Не знайдено підтримуваного пакетного менеджера."
     exit 1
 fi
-
-echo "[+] Менеджер пакетів: $PKG_MANAGER"
-
-echo "[+] Оновлення системи і встановлення необхідних пакетів..."
-$UPDATE_CMD
-$INSTALL_CMD curl wget git screen sed
-
-# === Завантаження або створення конфігуратора ===
-
-CONFIG_FILE="$HOME/.kaljan_config"
-
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "[+] Перший запуск. Налаштування параметрів..."
-
-    echo "[?] Виберіть модуль:"
-    echo "1 - mhddos_proxy"
-    echo "2 - distress"
-    read -rp "[1/2]: " module_choice
-
-    echo "[?] Чи хочете відкривати .ini файли у nano перед запуском?"
-    echo "1 - Так (рекомендується)"
-    echo "0 - Ні (автоматично)"
-    read -rp "[1/0]: " edit_ini
-
-    echo "[?] Виберіть режим запуску:"
-    echo "1 - через screen у фоні (рекомендується)"
-    echo "2 - через screen без фону (відкрита сесія)"
-    echo "3 - без використання screen (в терміналі)"
-    read -rp "[1/2/3]: " run_mode
-
-    cat > "$CONFIG_FILE" <<EOF
-MODULE_CHOICE=$module_choice
-RUN_MODE=$run_mode
-EDIT_INI_ON_START=$edit_ini
-EOF
-
-    echo "[+] Налаштування збережено в $CONFIG_FILE"
-fi
-
-# Завантаження налаштувань
-source "$CONFIG_FILE"
-
-# Встановлення змінних
-module_choice=$MODULE_CHOICE
-run_mode=$RUN_MODE
-edit_ini=$EDIT_INI_ON_START
-
-# === Підготовка папок ===
 
 MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
 
-WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
-WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
+# GUI вибір модуля
+MODULE_CHOICE=$(zenity --list --radiolist \
+--title="Вибір модуля" \
+--text="Оберіть модуль для запуску:" \
+--column="" --column="Модуль" \
+TRUE "mhddos_proxy" FALSE "distress")
 
-# === Завантаження WG-конфігів ===
-echo "[+] Завантаження WG-конфігів..."
-CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed -e 's|^/|https://github.com/|' -e 's|blob/|raw/|' -e "s|https://github.com/k7771/Kaljan747/raw/k7771/wg/|$WG_RAW_BASE/|" | grep -E '\.conf$')
+[ -z "$MODULE_CHOICE" ] && { zenity --error --text="Модуль не обрано"; exit 1; }
 
-for url in $CONF_LIST; do
-    file=$(basename "$url")
-    wget -qO "$WG_DIR/$file" "$url" && echo "[+] Завантажено: $file" || echo "[-] Помилка при завантаженні: $file"
-done
-
-$SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
-
-# === Створення .ini файлів ===
-echo "[+] Перевірка .ini файлів..."
-INI1="$MODULE_DIR/mhddos.ini"
-INI2="$MODULE_DIR/distress.ini"
-
-touch "$INI1" "$INI2"
-
-# === Завантаження модулів ===
-echo "[+] Завантаження модулів..."
-[ -f "$MODULE_DIR/mhddos_proxy" ] || wget -qO "$MODULE_DIR/mhddos_proxy" https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux
-[ -f "$MODULE_DIR/distress" ] || wget -qO "$MODULE_DIR/distress" https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl
-
-chmod +x "$MODULE_DIR/mhddos_proxy" "$MODULE_DIR/distress"
-
-# === Основний вибір модуля ===
-
-case $module_choice in
-    1)
+# Завантаження модулів
+case "$MODULE_CHOICE" in
+    mhddos_proxy)
         MODULE="$MODULE_DIR/mhddos_proxy"
-        CONFIG_FILE="$INI1"
-        MODULE_NAME="mhddos"
+        [ -f "$MODULE" ] || wget -qO "$MODULE" "https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
+        chmod +x "$MODULE"
+        INI="$MODULE_DIR/mhddos.ini"
+        PARAM="--ifaces"
         ;;
-    2)
+    distress)
         MODULE="$MODULE_DIR/distress"
-        CONFIG_FILE="$INI2"
-        MODULE_NAME="distress"
-        ;;
-    *)
-        echo "[-] Невірний вибір модуля."
-        exit 1
+        [ -f "$MODULE" ] || wget -qO "$MODULE" "https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
+        chmod +x "$MODULE"
+        INI="$MODULE_DIR/distress.ini"
+        PARAM="--interface"
         ;;
 esac
 
-# === Основний цикл перезапуску ===
-while true; do
-    echo "[+] Зупинка модуля..."
-    pkill -f "$MODULE" 2>/dev/null || screen -S "$MODULE_NAME" -X quit 2>/dev/null || true
-    sleep 2
+# Завантаження WG-конфігів
+WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
+WG_LIST=(wg1.conf wg2.conf wg3.conf wg4.conf wg5.conf)
 
-    echo "[+] Відключення всіх WG інтерфейсів..."
-    for iface in $(wg show interfaces 2>/dev/null || true); do
-        $SUDO wg-quick down "$iface" || true
-        sleep 1
-    done
-
-    echo "[+] Підключення нових WG конфігів..."
-    WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
-    WG_IFACES=()
-    for conf in "${WG_FILES[@]}"; do
-        IFACE_NAME=$(basename "$conf" .conf)
-        $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
-        $SUDO wg-quick up "$conf" && echo "[+] Підключено: $conf" || echo "[-] Не вдалося підключити: $conf"
-        WG_IFACES+=("$IFACE_NAME")
-        sleep 1
-    done
-
-    # === Оновлення ini файлів ===
-    VPN_LIST_SPACES=$(IFS=' '; echo "${WG_IFACES[*]}")
-    VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
-
-    echo "--use-my-ip 0 --copies auto -t 8000 --ifaces $VPN_LIST_SPACES" > "$INI1"
-    echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS" > "$INI2"
-
-    if [[ "$edit_ini" == "1" ]]; then
-        if [[ "$module_choice" == "1" ]]; then
-            echo "[?] Відкриття mhddos.ini для редагування..."
-            sleep 1
-            nano "$INI1"
-        elif [[ "$module_choice" == "2" ]]; then
-            echo "[?] Відкриття distress.ini для редагування..."
-            sleep 1
-            nano "$INI2"
-        fi
-    else
-        echo "[+] Редагування ini файлів пропущено."
-    fi
-
-    echo "[+] Запуск модуля..."
-    if [[ $run_mode == "1" ]]; then
-        screen -dmS "$MODULE_NAME" $MODULE $(<"$CONFIG_FILE")
-    elif [[ $run_mode == "2" ]]; then
-        screen -S "$MODULE_NAME" $MODULE $(<"$CONFIG_FILE")
-    else
-        $MODULE $(<"$CONFIG_FILE")
-    fi
-
-    echo "[+] Очікування 59 хвилин..."
-    sleep 3540
+for conf in "${WG_LIST[@]}"; do
+    wget -q "$WG_RAW_BASE/$conf" -O "$WG_DIR/$conf"
 done
+
+# Вибір WG-конфігів
+WG_SELECTED=$(zenity --list --checklist \
+--title="WireGuard" \
+--text="Оберіть WG-конфіги:" \
+--column="" --column="Конфіг" \
+$(for i in "${WG_LIST[@]}"; do echo TRUE "$i"; done))
+
+[ -z "$WG_SELECTED" ] && { zenity --error --text="WG-конфіги не обрано"; exit 1; }
+
+# Вимкнення WG-інтерфейсів
+wg show interfaces | xargs -I{} $SUDO wg-quick down {} 2>/dev/null || true
+
+# Підключення WG
+VPN_LIST=""
+for conf in $WG_SELECTED; do
+    iface=${conf%.conf}
+    $SUDO ip link delete "$iface" 2>/dev/null || true
+    $SUDO wg-quick up "$WG_DIR/$conf"
+    VPN_LIST+="$iface "
+done
+
+VPN_LIST=${VPN_LIST%% }
+[ "$MODULE_CHOICE" = "distress" ] && VPN_LIST=${VPN_LIST// /,}
+
+echo "$PARAM $VPN_LIST" > "$INI"
+
+# Редагування ini-файлу
+zenity --text-info --editable --filename="$INI" --title="Редагування $INI" > "$INI.tmp" && mv "$INI.tmp" "$INI"
+
+# Режим запуску
+RUN_MODE=$(zenity --list --radiolist \
+--title="Режим запуску" \
+--text="Оберіть режим запуску:" \
+--column="" --column="Режим" \
+TRUE "screen у фоні" FALSE "screen відкрито" FALSE "без screen")
+
+[ -z "$RUN_MODE" ] && { zenity --error --text="Режим не обрано"; exit 1; }
+
+case "$RUN_MODE" in
+    "screen у фоні")
+        screen -dmS "$MODULE_CHOICE" "$MODULE" $(cat "$INI")
+        zenity --info --text="Модуль запущено у фоні (screen)"
+        ;;
+    "screen відкрито")
+        zenity --info --text="Модуль відкриється у screen. Для виходу: Ctrl+A, D"
+        screen -S "$MODULE_CHOICE" "$MODULE" $(cat "$INI")
+        ;;
+    "без screen")
+        zenity --info --text="Модуль запускається у терміналі."
+        "$MODULE" $(cat "$INI")
+        ;;
+esac
