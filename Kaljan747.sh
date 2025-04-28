@@ -108,6 +108,20 @@ case $module_choice in
         ;;
 esac
 
+#=== Підготовка INI файлу ===
+echo "[+] Створення базового INI файлу..."
+if [[ "$MODULE_NAME" == "mhddos" ]]; then
+    echo "--use-my-ip 0 --copies auto -t 8000 --user-id=*********" > "$CONFIG_FILE"
+elif [[ "$MODULE_NAME" == "distress" ]]; then
+    echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000" > "$CONFIG_FILE"
+fi
+
+echo "[?] Бажаєте змінити INI вручну через nano? (y/n)"
+read -r edit_ini
+if [[ "$edit_ini" == "y" ]]; then
+    $SUDO nano "$CONFIG_FILE"
+fi
+
 #=== Вибір способу запуску ===
 RUN_MODE_FILE="$HOME/last_run_mode.txt"
 if [[ ! -s "$RUN_MODE_FILE" ]]; then
@@ -121,7 +135,7 @@ else
     run_mode=$(cat "$RUN_MODE_FILE")
 fi
 
-#=== Вимкнення активних WG через ip link ===
+#=== Вимкнення активних WG інтерфейсів ===
 echo "[+] Вимкнення активних WG інтерфейсів..."
 ACTIVE_WG=$(wg show interfaces 2>/dev/null || true)
 for iface in $ACTIVE_WG; do
@@ -139,8 +153,8 @@ for conf in "${WG_FILES[@]}"; do
     sleep 1
 done
 
-#=== Автоматичне оновлення INI з WG інтерфейсами ===
-echo "[+] Оновлення INI файлу модулем WG тунелів..."
+#=== Автоматичне доповнення INI з WG ===
+echo "[+] Оновлення INI файлу..."
 if [[ "$MODULE_NAME" == "mhddos" ]]; then
     echo "--use-my-ip 0 --copies auto -t 8000 --user-id=********* --ifaces ${WG_IFACES[*]}" > "$CONFIG_FILE"
 elif [[ "$MODULE_NAME" == "distress" ]]; then
@@ -149,7 +163,7 @@ fi
 
 ARGS=$(cat "$CONFIG_FILE")
 
-#=== Запуск модуля правильно через bash -c ===
+#=== Запуск модуля ===
 echo "[+] Запуск модуля..."
 if [[ $run_mode == "1" ]]; then
     screen -dmS "$MODULE_NAME" bash -c "$MODULE $ARGS"
