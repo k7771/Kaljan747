@@ -16,13 +16,13 @@ fi
 # === Встановлення залежностей ===
 if command -v apt >/dev/null 2>&1; then
     $SUDO apt update -y
-    $SUDO apt install -y curl wget git screen sed wireguard zenity x11-utils xterm htop iftop
+    $SUDO apt install -y curl wget git screen sed wireguard zenity x11-utils xterm htop iftop tmux
 elif command -v dnf >/dev/null 2>&1; then
-    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity xterm htop iftop
+    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity xterm htop iftop tmux
 elif command -v yum >/dev/null 2>&1; then
-    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity xterm htop iftop
+    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity xterm htop iftop tmux
 elif command -v apk >/dev/null 2>&1; then
-    $SUDO apk add curl wget git screen sed wireguard-tools zenity xterm htop iftop
+    $SUDO apk add curl wget git screen sed wireguard-tools zenity xterm htop iftop tmux
 else
     zenity --error --text="Підтримуваний пакетний менеджер не знайдено."; exit 1
 fi
@@ -76,7 +76,7 @@ done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# === Функція запуску модуля через xterm + screen з керуванням ===
+# === Функція запуску модуля через xterm + screen з керуванням і tmux моніторингом ===
 launch_module_and_monitor() {
     local MODULE_NAME="$1"
     local MODULE="$2"
@@ -108,9 +108,10 @@ launch_module_and_monitor() {
     sleep 1
 
     xterm -T "Kaljan747 Моніторинг" -bg black -fg white +sb -fa 'Monospace' -fs 11 -e "bash -c '
-    htop &
-    sleep 2
-    iftop -i \$(ip route | grep default | awk '{print \$5}')
+    tmux new-session -d \"htop\"
+    tmux split-window -h \"iftop -i \\$(ip route | grep default | awk \\\"{print \\\\$5}\\\")\"
+    tmux select-layout even-horizontal
+    tmux attach
     '" &
 }
 
