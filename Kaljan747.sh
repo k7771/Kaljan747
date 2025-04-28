@@ -13,16 +13,16 @@ else
     fi
 fi
 
-# === Визначення пакетного менеджера та встановлення залежностей ===
+# === Встановлення залежностей ===
 if command -v apt >/dev/null 2>&1; then
     $SUDO apt update -y
-    $SUDO apt install -y curl wget git screen sed wireguard zenity x11-utils xterm
+    $SUDO apt install -y curl wget git screen sed wireguard zenity x11-utils xterm htop iftop
 elif command -v dnf >/dev/null 2>&1; then
-    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity xterm
+    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity xterm htop iftop
 elif command -v yum >/dev/null 2>&1; then
-    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity xterm
+    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity xterm htop iftop
 elif command -v apk >/dev/null 2>&1; then
-    $SUDO apk add curl wget git screen sed wireguard-tools zenity xterm
+    $SUDO apk add curl wget git screen sed wireguard-tools zenity xterm htop iftop
 else
     zenity --error --text="Підтримуваний пакетний менеджер не знайдено."; exit 1
 fi
@@ -76,7 +76,7 @@ done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# === Функція запуску модуля через xterm + screen ===
+# === Функція запуску модуля через xterm + screen з правильними кольорами ===
 launch_module_and_monitor() {
     local MODULE_NAME="$1"
     local MODULE="$2"
@@ -89,21 +89,16 @@ launch_module_and_monitor() {
     sleep 2
 
     # Вікно з модулем
-    xterm -T "Kaljan747 Модуль: $MODULE_NAME" -e "screen -r $MODULE_NAME" &
+    xterm -T "Kaljan747 Модуль: $MODULE_NAME" -bg black -fg green +sb -fa 'Monospace' -fs 11 -e "screen -r $MODULE_NAME" &
 
     sleep 1
 
     # Вікно з моніторингом системи
-    xterm -T "Kaljan747 Моніторинг Системи" -e "watch -n 1 '
-    echo \"=== CPU Usage ===\"
-    top -b -n1 | grep \"Cpu(s)\"
-    echo \"\"
-    echo \"=== RAM Usage ===\"
-    free -m | grep Mem
-    echo \"\"
-    echo \"=== Network RX/TX ===\"
-    cat /proc/net/dev | grep -E \"(eth0|wlan0|ens|eno|enp|wlp|wlx)\"'
-    " &
+    xterm -T "Kaljan747 Моніторинг" -bg black -fg white +sb -fa 'Monospace' -fs 11 -e "bash -c '
+    htop &
+    sleep 2
+    iftop -i \$(ip route | grep default | awk '{print \$5}')
+    '" &
 }
 
 # === Основний цикл перезапуску ===
