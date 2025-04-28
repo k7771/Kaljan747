@@ -30,6 +30,7 @@ fi
 MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
+touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
 
 # === Графічний інтерфейс вибору налаштувань ===
 USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація" \
@@ -81,7 +82,9 @@ show_screen_in_zenity() {
     local MODULE="$2"
     local CONFIG_FILE="$3"
 
-    screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat \"$CONFIG_FILE\")"
+    [ -f "$CONFIG_FILE" ] || { zenity --error --text="Файл $CONFIG_FILE не знайдено!"; exit 1; }
+
+    screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat $CONFIG_FILE)"
     sleep 2
 
     (
