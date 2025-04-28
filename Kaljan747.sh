@@ -50,7 +50,6 @@ done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# === Функція запуску моніторингу через tmux ===
 launch_monitoring() {
     xterm -T "Kaljan747 Моніторинг" -bg black -fg white +sb -fa 'Monospace' -fs 11 -e "bash -c '
     tmux new-session -d \"htop\"
@@ -60,7 +59,6 @@ launch_monitoring() {
     '" &
 }
 
-# === Функція запуску модуля ===
 launch_module() {
     screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat $CONFIG_FILE)"
     if [ "$MONITORING" -eq 1 ]; then
@@ -68,14 +66,12 @@ launch_module() {
     fi
 }
 
-# === Функція зупинки модуля ===
 stop_module() {
     screen -S "$MODULE_NAME" -X stuff "^C"
     sleep 2
     screen -S "$MODULE_NAME" -X quit
 }
 
-# === Функція перезавантаження WG ===
 restart_wg() {
     for iface in $(wg show interfaces 2>/dev/null); do
         $SUDO wg-quick down "$iface" || true
@@ -97,17 +93,15 @@ restart_wg() {
     echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=********" > "$MODULE_DIR/distress.ini"
 }
 
-# === Основний нескінченний цикл пульта ===
 while true; do
     ACTION=$(zenity --list --radiolist --width=400 --height=500 \
         --title="Kaljan747 Пульт Управління" \
         --text="Оберіть дію:" \
         --column="Вибір" --column="Дія" \
-        FALSE "Вибрати модуль" \
+        TRUE "Вибрати модуль" \
         FALSE "Редагувати INI" \
         FALSE "Вибрати режим запуску" \
-        FALSE "Увімкнути моніторинг" \
-        FALSE "Вимкнути моніторинг" \
+        FALSE "Моніторинг показати/приховати" \
         FALSE "Перезапустити модуль" \
         FALSE "Згорнути модуль" \
         FALSE "Зупинити модуль" \
@@ -117,7 +111,7 @@ while true; do
         "Вибрати модуль")
             stop_module
             restart_wg
-            MODULE_CHOICE=$(zenity --list --radiolist --title="Вибір модуля" --column="Вибір" --column="Модуль" FALSE "mhddos_proxy" FALSE "distress")
+            MODULE_CHOICE=$(zenity --list --radiolist --title="Вибір модуля" --column="Вибір" --column="Модуль" TRUE "mhddos_proxy" FALSE "distress")
             case "$MODULE_CHOICE" in
                 "mhddos_proxy")
                     MODULE_NAME="mhddos"
@@ -139,13 +133,15 @@ while true; do
             fi
             ;;
         "Вибрати режим запуску")
-            RUN_MODE=$(zenity --list --radiolist --title="Режим запуску" --column="Вибір" --column="Режим" FALSE "screen у фоні" FALSE "screen відкрито" FALSE "без screen")
+            RUN_MODE=$(zenity --list --radiolist --title="Режим запуску" --column="Вибір" --column="Режим" TRUE "screen у фоні" FALSE "screen відкрито" FALSE "без screen")
             ;;
-        "Увімкнути моніторинг")
-            MONITORING=1
-            ;;
-        "Вимкнути моніторинг")
-            MONITORING=0
+        "Моніторинг показати/приховати")
+            MONITORING_CHOICE=$(zenity --list --radiolist --title="Моніторинг" --column="Вибір" --column="Опція" TRUE "Показати" FALSE "Приховати")
+            if [ "$MONITORING_CHOICE" = "Показати" ]; then
+                MONITORING=1
+            else
+                MONITORING=0
+            fi
             ;;
         "Перезапустити модуль")
             stop_module
@@ -162,5 +158,4 @@ while true; do
             exit 0
             ;;
     esac
-
 done
