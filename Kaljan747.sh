@@ -88,12 +88,8 @@ launch_module_and_monitor() {
 
     sleep 2
 
-    # Вікно з модулем
     xterm -T "Kaljan747 Модуль: $MODULE_NAME" -bg black -fg green +sb -fa 'Monospace' -fs 11 -e "screen -r $MODULE_NAME" &
 
-    sleep 1
-
-    # Пульт керування модулем
     (
     while true; do
         ACTION=$(zenity --width=300 --height=150 --title="Керування модулем" --question --text="Оберіть дію:" --ok-label="Згорнути" --cancel-label="Зупинити")
@@ -111,7 +107,6 @@ launch_module_and_monitor() {
 
     sleep 1
 
-    # Вікно з моніторингом системи
     xterm -T "Kaljan747 Моніторинг" -bg black -fg white +sb -fa 'Monospace' -fs 11 -e "bash -c '
     htop &
     sleep 2
@@ -125,13 +120,13 @@ while true; do
 
     for iface in $(wg show interfaces 2>/dev/null); do
         $SUDO wg-quick down "$iface" || true
+        $SUDO ip link delete "$iface" || true
     done
 
     WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
     WG_IFACES=()
     for conf in "${WG_FILES[@]}"; do
         IFACE_NAME=$(basename "$conf" .conf)
-        $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
         $SUDO wg-quick up "$conf"
         WG_IFACES+=("$IFACE_NAME")
     done
