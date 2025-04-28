@@ -16,13 +16,13 @@ fi
 # === Визначення пакетного менеджера та встановлення залежностей ===
 if command -v apt >/dev/null 2>&1; then
     $SUDO apt update -y
-    $SUDO apt install -y curl wget git screen sed wireguard zenity x11-utils
+    $SUDO apt install -y curl wget git screen sed wireguard zenity x11-utils xterm
 elif command -v dnf >/dev/null 2>&1; then
-    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity xorg-x11-utils
+    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity xterm
 elif command -v yum >/dev/null 2>&1; then
-    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity xorg-x11-utils
+    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity xterm
 elif command -v apk >/dev/null 2>&1; then
-    $SUDO apk add curl wget git screen sed wireguard-tools zenity x11-utils
+    $SUDO apk add curl wget git screen sed wireguard-tools zenity xterm
 else
     zenity --error --text="Підтримуваний пакетний менеджер не знайдено."; exit 1
 fi
@@ -76,8 +76,8 @@ done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# === Функція запуску та виводу екрану в Zenity ===
-show_screen_in_zenity() {
+# === Функція запуску модуля через xterm + screen ===
+launch_module_and_monitor() {
     local MODULE_NAME="$1"
     local MODULE="$2"
     local CONFIG_FILE="$3"
@@ -85,51 +85,34 @@ show_screen_in_zenity() {
     [ -f "$CONFIG_FILE" ] || { zenity --error --text="Файл $CONFIG_FILE не знайдено!"; exit 1; }
 
     screen -dmS "$MODULE_NAME" bash -c "$MODULE $(cat $CONFIG_FILE)"
+
     sleep 2
 
-    (
-      while true; do
-        screen -S "$MODULE_NAME" -X hardcopy /tmp/${MODULE_NAME}_current.log
-        sleep 1
-      done
-    ) &
-    LOG_UPDATER_PID=$!
+    # Вікно з модулем
+    xterm -T "Kaljan747 Модуль: $MODULE_NAME" -e "screen -r $MODULE_NAME" &
 
-    while true; do
-      ACTION=$(zenity --width=$(xdpyinfo | awk '/dimensions/{print int($2*0.9)}') \
-        --height=600 \
-        --title="Kaljan747: $MODULE_NAME" \
-        --text-info \
-        --filename="/tmp/${MODULE_NAME}_current.log" \
-        --ok-label="Оновити" \
-        --extra-button="Згорнути" \
-        --extra-button="Вимкнути")
+    sleep 1
 
-      case "$ACTION" in
-        "Згорнути")
-          screen -S "$MODULE_NAME" -X detach
-          kill "$LOG_UPDATER_PID"
-          break
-          ;;
-        "Вимкнути")
-          screen -S "$MODULE_NAME" -X stuff "^C"
-          sleep 2
-          screen -S "$MODULE_NAME" -X quit
-          kill "$LOG_UPDATER_PID"
-          break
-          ;;
-        *)
-          # Просто оновлення
-          ;;
-      esac
-    done
+    # Вікно з моніторингом системи
+    xterm -T "Kaljan747 Моніторинг Системи" -e "watch -n 1 '
+    echo \"=== CPU Usage ===\"
+    top -b -n1 | grep \"Cpu(s)\"
+    echo \"\"
+    echo \"=== RAM Usage ===\"
+    free -m | grep Mem
+    echo \"\"
+    echo \"=== Network RX/TX ===\"
+    cat /proc/net/dev | grep -E \"(eth0|wlan0|ens|eno|enp|wlp|wlx)\"'
+    " &
 }
 
 # === Основний цикл перезапуску ===
 while true; do
     pkill -f "$MODULE" 2>/dev/null || screen -S "$MODULE_NAME" -X quit 2>/dev/null || true
 
-    wg show interfaces | xargs -I{} $SUDO wg-quick down {} || true
+    for iface in $(wg show interfaces 2>/dev/null); do
+        $SUDO wg-quick down "$iface" || true
+    done
 
     WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 4))
     WG_IFACES=()
@@ -150,7 +133,7 @@ while true; do
 
     case "$RUN_MODE" in
         "screen у фоні"|"screen відкрито")
-            show_screen_in_zenity "$MODULE_NAME" "$MODULE" "$CONFIG_FILE"
+            launch_module_and_monitor "$MODULE_NAME" "$MODULE" "$CONFIG_FILE"
             ;;
         "без screen")
             "$MODULE" $(cat "$CONFIG_FILE")
