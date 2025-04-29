@@ -152,10 +152,10 @@ esac
 [ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
 chmod +x "$MODULE"
 
-# === Зупинка всіх активних WG ===
+# === Зупинка всіх активних WG інтерфейсів ===
 for iface in $(wg show interfaces 2>/dev/null); do
-    $SUDO wg-quick down "$iface" || true
-    $SUDO ip link delete "$iface" || true
+    $SUDO wg-quick down "$iface" 2>/dev/null || true
+    $SUDO ip link delete "$iface" 2>/dev/null || true
 done
 
 # === Підключення 4 робочих тунелів ===
@@ -168,7 +168,7 @@ WG_IFACES=()
 
 for conf in "${WG_FILES[@]}"; do
     IFACE_NAME=$(basename "$conf" .conf)
-    $SUDO wg-quick up "$conf" 2>/dev/null
+    $SUDO wg-quick up "$conf" 2>/dev/null || true
     sleep 2
     if check_wg_connection "$IFACE_NAME"; then
         echo "[+] Інтерфейс $IFACE_NAME працює."
@@ -177,7 +177,7 @@ for conf in "${WG_FILES[@]}"; do
     else
         echo "[-] Інтерфейс $IFACE_NAME не працює. Відключаю."
         echo "$(date '+%Y-%m-%d %H:%M:%S') [-] Інтерфейс $IFACE_NAME не працює. Відключено." >> "$LOG_FILE"
-        $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null
+        $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null || true
         $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
     fi
     if [ "${#WG_IFACES[@]}" -ge 4 ]; then
