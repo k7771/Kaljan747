@@ -179,7 +179,7 @@ for iface in $(wg show interfaces 2>/dev/null); do
 done
 
 # === Підключення нових WG ===
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 3))
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 5))
 WG_IFACES=()
 for conf in "${WG_FILES[@]}"; do
     IFACE_NAME=$(basename "$conf" .conf)
