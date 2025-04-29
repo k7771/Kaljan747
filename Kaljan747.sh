@@ -165,8 +165,10 @@ check_wg_connection() {
 
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
 WG_IFACES=()
+INDEX=0
 
-for conf in "${WG_FILES[@]}"; do
+while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
+    conf="${WG_FILES[$INDEX]}"
     IFACE_NAME=$(basename "$conf" .conf)
     $SUDO wg-quick up "$conf" 2>/dev/null || true
     sleep 2
@@ -180,14 +182,11 @@ for conf in "${WG_FILES[@]}"; do
         $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null || true
         $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
     fi
-    if [ "${#WG_IFACES[@]}" -ge 4 ]; then
-        break
-    fi
+    INDEX=$((INDEX+1))
 done
 
-if [ "${#WG_IFACES[@]}" -eq 0 ]; then
-    echo "[-] Жодного робочого тунелю не знайдено. Завершення."
-    exit 0
+if [ "${#WG_IFACES[@]}" -lt 4 ]; then
+    echo "[-] Увага: вдалося підняти тільки ${#WG_IFACES[@]} тунелі."
 fi
 
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
