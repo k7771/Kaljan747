@@ -1,8 +1,11 @@
 #!/bin/bash
-
 set -e
 
 SETTINGS_FILE="$HOME/.kaljan747_settings"
+LOG_DIR="$HOME/logs"
+LOG_FILE="$LOG_DIR/wg.log"
+mkdir -p "$LOG_DIR"
+touch "$LOG_FILE"
 
 # === Функції для запиту ===
 ask_user_id() {
@@ -51,25 +54,7 @@ ask_run_parameters() {
 
 # === Завантаження/запит налаштувань ===
 if [ -f "$SETTINGS_FILE" ]; then
-    if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
-        zenity --question --title="Налаштування" --text="Використати збережені налаштування?" --ok-label="Так" --cancel-label="Ні"
-        USE_OLD=$?
-    else
-        echo "Знайдено збережені налаштування:"
-        echo "1) Використати старі"
-        echo "2) Ввести нові"
-        read -p "Ваш вибір (1/2): " choice
-        USE_OLD=$((choice-1))
-    fi
-
-    if [ "$USE_OLD" -eq 0 ]; then
-        source "$SETTINGS_FILE"
-    else
-        USER_ID=""
-        SELECTED_MODULE=""
-        EDIT_INI=""
-        SELECTED_RUN_MODE=""
-    fi
+    source "$SETTINGS_FILE"
 fi
 
 if [ -z "$USER_ID" ]; then
@@ -91,14 +76,38 @@ if [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" 
     ask_run_parameters
 fi
 
-cat > "$SETTINGS_FILE" <<EOF
-USER_ID="$USER_ID"
-SELECTED_MODULE="$SELECTED_MODULE"
-EDIT_INI="$EDIT_INI"
-SELECTED_RUN_MODE="$SELECTED_RUN_MODE"
-EOF
+# === Пошук або підтвердження папки wg_confs ===
+if [ -z "$WG_DIR" ] || [ ! -d "$WG_DIR" ]; then
+    echo "[+] Шукаю папку wg_confs..."
+    WG_DIRS=($(find "$HOME" -type d -name "wg_confs" 2>/dev/null))
+    if [ ${#WG_DIRS[@]} -eq 0 ]; then
+        echo "[!] У $HOME не знайдено, шукаю у всій файловій системі..."
+        WG_DIRS=($(find / -type d -name "wg_confs" 2>/dev/null))
+    fi
+    if [ ${#WG_DIRS[@]} -eq 0 ]; then
+        echo "[-] Папку wg_confs не знайдено."
+        exit 1
+    fi
+    if [ ${#WG_DIRS[@]} -gt 1 ]; then
+        echo "[+] Знайдено кілька папок wg_confs:"
+        for i in "${!WG_DIRS[@]}"; do
+            echo "$((i+1))) ${WG_DIRS[$i]}"
+        done
+        if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
+            SELECTED_INDEX=$(zenity --list --title="Виберіть папку wg_confs" --column="Номер" --column="Папка" $(for i in "${!WG_DIRS[@]}"; do echo "$((i+1))" "${WG_DIRS[$i]}"; done) --width=600 --height=400 | awk '{print $1}')
+        else
+            read -p "Введіть номер потрібної папки: " SELECTED_INDEX
+        fi
+        WG_DIR="${WG_DIRS[$((SELECTED_INDEX-1))]}"
+    else
+        WG_DIR="${WG_DIRS[0]}"
+    fi
+    echo "WG_DIR=\"$WG_DIR\"" >> "$SETTINGS_FILE"
+fi
 
-# === Перевірка sudo ===
+echo "[+] Використовую папку: $WG_DIR"
+
+# === Перевірка прав користувача ===
 if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
 else
@@ -121,11 +130,10 @@ fi
 
 # === Підготовка папок ===
 MODULE_DIR="$HOME/modules"
-WG_DIR="$HOME/wg_confs"
-mkdir -p "$MODULE_DIR" "$WG_DIR"
+mkdir -p "$MODULE_DIR"
 touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
 
-# === Завантаження модулів ===
+# === Завантаження модуля ===
 case "$SELECTED_MODULE" in
     mhddos_proxy)
         MODULE="$MODULE_DIR/mhddos_proxy"
@@ -144,30 +152,17 @@ esac
 [ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
 chmod +x "$MODULE"
 
-# === Завантаження WG-конфігів ===
-WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
-WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
-CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed -e 's|^/|https://github.com/|' -e 's|blob/|raw/|')
-
-for url in $CONF_LIST; do
-    file=$(basename "$url")
-    wget -qO "$WG_DIR/$file" "$url"
-done
-
-$SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
-
-# === Перевірка WG тунелів ===
-check_wg_connection() {
-    curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null 2>&1
-}
-
-# Зупинка всіх інтерфейсів
+# === Зупинка всіх активних WG ===
 for iface in $(wg show interfaces 2>/dev/null); do
     $SUDO wg-quick down "$iface" || true
     $SUDO ip link delete "$iface" || true
 done
 
-# Підключення 4 робочих тунелів
+# === Підключення 4 робочих тунелів ===
+check_wg_connection() {
+    curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null 2>&1
+}
+
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
 WG_IFACES=()
 
@@ -177,9 +172,11 @@ for conf in "${WG_FILES[@]}"; do
     sleep 2
     if check_wg_connection "$IFACE_NAME"; then
         echo "[+] Інтерфейс $IFACE_NAME працює."
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [+] Інтерфейс $IFACE_NAME працює." >> "$LOG_FILE"
         WG_IFACES+=("$IFACE_NAME")
     else
-        echo "[-] Інтерфейс $IFACE_NAME не працює. Видаляю."
+        echo "[-] Інтерфейс $IFACE_NAME не працює. Відключаю."
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [-] Інтерфейс $IFACE_NAME не працює. Відключено." >> "$LOG_FILE"
         $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null
         $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
     fi
@@ -189,8 +186,8 @@ for conf in "${WG_FILES[@]}"; do
 done
 
 if [ "${#WG_IFACES[@]}" -eq 0 ]; then
-    echo "[-] Не знайдено робочих WG тунелів. Завершення."
-    exit 1
+    echo "[-] Жодного робочого тунелю не знайдено. Завершення."
+    exit 0
 fi
 
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
