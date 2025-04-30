@@ -26,8 +26,24 @@ print_stage() {
 SETTINGS_FILE="$HOME/.kaljan747_settings"
 LOG_DIR="$HOME/logs"
 LOG_FILE="$LOG_DIR/wg.log"
+MODULE_DIR="$HOME/modules"
+WG_DIR="$HOME/wg_confs"
 mkdir -p "$LOG_DIR"
 touch "$LOG_FILE"
+
+# === Встановлення прав доступу ===
+set_permissions() {
+    echo -e "\n📁  Встановлюю права доступу до папок і файлів..."
+    sudo chmod -R 755 $HOME
+    sudo chmod -R 755 $MODULE_DIR
+    sudo chmod -R 755 $WG_DIR
+    sudo chmod +x $MODULE_DIR/mhddos_proxy
+    sudo chmod +x $MODULE_DIR/distress
+    sudo chmod 644 $MODULE_DIR/mhddos.ini
+    sudo chmod 644 $MODULE_DIR/distress.ini
+    sudo chown -R $USER:$USER $HOME
+    echo -e "✅ Права доступу встановлено."
+}
 
 # === Функції для запиту ===
 ask_user_id() {
@@ -102,6 +118,9 @@ print_header
 echo -e "📥  Отримано USER-ID: \e[1;32m$USER_ID\e[0m"
 echo -e "🧩  Обраний модуль: \e[1;36m$SELECTED_MODULE\e[0m"
 echo -e "🛠️  Режим запуску: \e[1;36m$SELECTED_RUN_MODE\e[0m"
+
+# Встановлення прав доступу
+set_permissions
 
 # === Пошук або підтвердження папки wg_confs ===
 if [ -z "$WG_DIR" ] || [ ! -d "$WG_DIR" ]; then
@@ -197,12 +216,12 @@ while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
     $SUDO wg-quick up "$conf" 2>/dev/null || true
     sleep 2
     if check_wg_connection "$IFACE_NAME"; then
-        echo "[+] Інтерфейс $IFACE_NAME працює."
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [+] Інтерфейс $IFACE_NAME працює." >> "$LOG_FILE"
+        echo -e "✅ Інтерфейс $IFACE_NAME працює."
+        echo "$(date '+%Y-%m-%d %H:%M:%S') ✅ Інтерфейс $IFACE_NAME працює." >> "$LOG_FILE"
         WG_IFACES+=("$IFACE_NAME")
     else
-        echo "[-] Інтерфейс $IFACE_NAME не працює. Відключаю."
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [-] Інтерфейс $IFACE_NAME не працює. Відключено." >> "$LOG_FILE"
+        echo -e "❌ Інтерфейс $IFACE_NAME не працює. Відключаю."
+        echo "$(date '+%Y-%m-%d %H:%M:%S') ❌ Інтерфейс $IFACE_NAME не працює. Відключено." >> "$LOG_FILE"
         $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null || true
         $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
     fi
@@ -226,12 +245,20 @@ if [ "$EDIT_INI" = "Так" ]; then
 fi
 
 # === Запуск модуля ===
+echo -e "⚙️  Запускаю модуль..."
 case "$SELECTED_RUN_MODE" in
-    "screen у фоні") screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE"); PID=$(pgrep -f "$MODULE") ;;
-    "screen відкрито") screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE"); PID=$(pgrep -f "$MODULE") ;;
-    "без screen") "$MODULE" $(cat "$CONFIG_FILE") & PID=$! ;;
+    "screen у фоні") 
+        screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE"); PID=$(pgrep -f "$MODULE")
+        echo -e "✅ Модуль запущено в фоні." ;;
+    "screen відкрито") 
+        screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE"); PID=$(pgrep -f "$MODULE")
+        echo -e "🖥️ Модуль запущено відкрито." ;;
+    "без screen") 
+        "$MODULE" $(cat "$CONFIG_FILE") & PID=$! 
+        echo -e "🚫 Модуль запущено без screen." ;;
 esac
 
 print_summary "$PID"
 
 exit 0
+
