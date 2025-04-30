@@ -14,8 +14,6 @@ print_summary() {
     echo -e "🌍  Завантаження WG-конфігів: \e[1;32mOK\e[0m"
     echo -e "⚙️  Запуск модуля: PID $1"
     echo -e "----------------------------------------\e[0m"
-
-    echo -e "\n📨  Email-звіт буде надсилатись кожні 4 год. на \e[1;35muser@example.com\e[0m"
 }
 
 print_stage() {
@@ -42,6 +40,11 @@ set_permissions() {
     sudo chmod 644 $MODULE_DIR/mhddos.ini
     sudo chmod 644 $MODULE_DIR/distress.ini
     sudo chown -R $USER:$USER $HOME
+
+    # Надаємо права на директорію логів та файли в ній
+    sudo chmod -R 755 $LOG_DIR
+    sudo chown -R $USER:$USER $LOG_DIR
+    sudo chmod 644 $LOG_FILE
     echo -e "✅ Права доступу встановлено."
 }
 
@@ -261,4 +264,3 @@ esac
 print_summary "$PID"
 
 exit 0
-
