@@ -144,19 +144,19 @@ fi
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-ACTIVE_IFACES=$(wg show interfaces 2>/dev/null)
+ACTIVE_IFACES=$(wg show interfaces 2>/dev/null | xargs)
+
 if [ -n "$ACTIVE_IFACES" ]; then
     echo -e "
 🛑 Буде зупинено інтерфейси: $ACTIVE_IFACES"
+    for iface in $ACTIVE_IFACES; do
+        echo "🧹 Зупинка та очищення інтерфейсу: $iface"
+        $SUDO wg-quick down "$iface" || true
+        $SUDO ip link delete "$iface" || true
+    done
+else
+    echo "✅ Активних інтерфейсів не знайдено."
 fi
-
-for iface in $ACTIVE_IFACES; do
-    # Захист від порожнього або некоректного значення
-    [ -z "$iface" ] && continue
-    echo "🧹 Зупинка та очищення інтерфейсу: $iface"
-    $SUDO wg-quick down "$iface" || true
-    $SUDO ip link delete "$iface" || true
-done
 done
 
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
