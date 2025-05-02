@@ -157,7 +157,7 @@ FAIL=0
 echo -e "\n🔧 Перевірка та підняття WG-інтерфейсів:"
 
 for conf in "${WG_FILES[@]}"; do
-    [ ${#WG_IFACES[@]} -ge $MAX_WG ] && break
+    
     IFACE_NAME=$(basename "$conf" .conf)
     echo -e "\n📄 $IFACE_NAME:"
 
@@ -167,6 +167,7 @@ for conf in "${WG_FILES[@]}"; do
     if $SUDO wg-quick up "$conf" 2> >(tee /tmp/wg_error.log >&2); then
         if $SUDO wg show "$IFACE_NAME" &>/dev/null; then
             WG_IFACES+=("$IFACE_NAME")
+            [ ${#WG_IFACES[@]} -ge $MAX_WG ] && break
             echo "✅ Інтерфейс $IFACE_NAME піднято"
             $SUDO wg show "$IFACE_NAME"
             ((SUCCESS++))
