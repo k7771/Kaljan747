@@ -150,7 +150,7 @@ if [ -n "$ACTIVE_IFACES" ]; then
     echo -e "\n🛑 Буде зупинено інтерфейси: $ACTIVE_IFACES"
     for iface in $ACTIVE_IFACES; do
         echo "🧹 Зупинка та очищення інтерфейсу: $iface"
-        $SUDO wg-quick down "$iface" || true
+        $SUDO wg-quick down "$WG_DIR/$iface.conf" || true
         $SUDO ip link delete "$iface" || true
     done
 else
@@ -171,7 +171,8 @@ for conf in "${WG_FILES[@]}"; do
     if ! grep -q "PrivateKey" "$conf"; then echo "❌ Відсутній PrivateKey"; ((FAIL++)); continue; fi
     if ! grep -q "Endpoint" "$conf"; then echo "❌ Відсутній Endpoint"; ((FAIL++)); continue; fi
 
-    if $SUDO wg-quick up "$conf" 2> >(tee /tmp/wg_error.log >&2); then
+    if # запускаємо wg-quick з повним шляхом
+        $SUDO wg-quick up "$conf" 2> >(tee /tmp/wg_error.log >&2); then
         if $SUDO wg show "$IFACE_NAME" &>/dev/null; then
             WG_IFACES+=("$IFACE_NAME")
             echo "✅ Інтерфейс $IFACE_NAME піднято"
