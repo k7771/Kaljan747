@@ -32,20 +32,65 @@ touch "$LOG_FILE"
 # === Встановлення прав доступу ===
 set_permissions() {
     echo -e "\n📁  Встановлюю права доступу до папок і файлів..."
-    sudo chmod -R 755 $HOME
-    sudo chmod -R 755 $MODULE_DIR
-    sudo chmod -R 755 $WG_DIR
-    sudo chmod +x $MODULE_DIR/mhddos_proxy
-    sudo chmod +x $MODULE_DIR/distress
+
+    # Створення папок, якщо вони не існують
+    sudo mkdir -p $MODULE_DIR
+    sudo mkdir -p $WG_DIR
+
+    # Перевірка наявності файлів перед встановленням прав
+    if [ -f "$MODULE_DIR/mhddos_proxy" ]; then
+        sudo chmod +x $MODULE_DIR/mhddos_proxy
+    else
+        echo "[-] Файл mhddos_proxy не знайдено!"
+    fi
+
+    if [ -f "$MODULE_DIR/distress" ]; then
+        sudo chmod +x $MODULE_DIR/distress
+    else
+        echo "[-] Файл distress не знайдено!"
+    fi
+
     sudo chmod 644 $MODULE_DIR/mhddos.ini
     sudo chmod 644 $MODULE_DIR/distress.ini
     sudo chown -R $USER:$USER $HOME
 
-    # Надаємо права на директорію логів та файли в ній
     sudo chmod -R 755 $LOG_DIR
     sudo chown -R $USER:$USER $LOG_DIR
     sudo chmod 644 $LOG_FILE
     echo -e "✅ Права доступу встановлено."
+}
+
+# === Завантаження WG-конфігів ===
+download_wg_configs() {
+    echo -e "\n📥 Завантаження WG-конфігів..."
+    
+    # Оновлений GitHub URL для завантаження конфігурацій
+    WG_REPO_URL="https://github.com/k7771/Kaljan747/tree/k7771/wg"
+    
+    # Збираємо список конфігураційних файлів з GitHub (raw URL)
+    CONF_LIST=$(curl -fsSL "$WG_REPO_URL" | grep -oP '(?<=href=").*?\.conf(?=")' | sed -e 's|^/|https://raw.githubusercontent.com/|')
+
+    if [ -z "$CONF_LIST" ]; then
+        echo "[-] Не вдалося знайти конфігураційні файли за вказаним URL."
+        exit 1
+    fi
+
+    # Завантаження всіх конфігураційних файлів
+    for url in $CONF_LIST; do
+        file=$(basename "$url")
+        wget -qO "$WG_DIR/$file" "$url" || { echo "[-] Не вдалося завантажити конфігураційний файл $file"; exit 1; }
+    done
+}
+
+# === Встановлення залежностей ===
+install_dependencies() {
+    if command -v apt >/dev/null 2>&1; then
+        sudo apt update -y
+        sudo apt install -y curl wget git screen sed wireguard zenity
+    else
+        echo "Підтримуваний пакетний менеджер не знайдено."
+        exit 1
+    fi
 }
 
 # === Функції для запиту ===
@@ -124,6 +169,12 @@ echo -e "🛠️  Режим запуску: \e[1;36m$SELECTED_RUN_MODE\e[0m"
 
 # Встановлення прав доступу
 set_permissions
+
+# Завантаження конфігурацій
+download_wg_configs
+
+# Встановлення залежностей
+install_dependencies
 
 # === Пошук або підтвердження папки wg_confs ===
 if [ -z "$WG_DIR" ] || [ ! -d "$WG_DIR" ]; then
