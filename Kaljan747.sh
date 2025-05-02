@@ -144,9 +144,17 @@ fi
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-for iface in $(wg show interfaces 2>/dev/null); do
+ACTIVE_IFACES=$(wg show interfaces 2>/dev/null)
+if [ -n "$ACTIVE_IFACES" ]; then
+    echo -e "
+🛑 Буде зупинено інтерфейси: $ACTIVE_IFACES"
+fi
+
+for iface in $ACTIVE_IFACES; do
+    echo "🧹 Зупинка та очищення інтерфейсу: $iface"
     $SUDO wg-quick down "$iface" || true
     $SUDO ip link delete "$iface" || true
+done
 done
 
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
