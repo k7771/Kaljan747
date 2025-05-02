@@ -188,14 +188,31 @@ esac
 [ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
 chmod +x "$MODULE"
 
-# === Завантаження WG-конфігів ===
+print_stage "🌍  Завантаження WG-конфігів..."
+
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
-CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=").*?\.conf(?=")' | grep '/k7771/Kaljan747/blob/' | sed -e 's|^/|https://github.com/|' -e 's|blob/|raw/|')
 
-for url in $CONF_LIST; do
-    file=$(basename "$url")
-    wget -qO "$WG_DIR/$file" "$url"
+CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=")[^"]+\.conf(?=")' | grep "/k7771/Kaljan747/blob/" | sed -E 's|^/k7771/Kaljan747/blob/k7771/wg/||')
+
+if [ -z "$CONF_LIST" ]; then
+    echo "❌ Не вдалося отримати список конфігів. Перевір з'єднання або посилання."
+    exit 1
+fi
+
+for file in $CONF_LIST; do
+    RAW_URL="$WG_RAW_BASE/$file"
+    DEST="$WG_DIR/$(basename "$file")"
+
+    if ! curl -fsSL "$RAW_URL" -o "$DEST"; then
+        echo "⚠️  curl не вдалося для $file, пробуємо wget..."
+        if ! wget -qO "$DEST" "$RAW_URL"; then
+            echo "❌ Не вдалося завантажити $file ні через curl, ні через wget"
+            continue
+        fi
+    fi
+
+    echo "✅ Завантажено: $file"
 done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
