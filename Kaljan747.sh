@@ -20,27 +20,20 @@ print_summary() {
     echo -e "----------------------------------------\e[0m"
 }
 
-# === Шляхи ===
-WG_REPO_RAW="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_DIR="$HOME/wg_confs"
 LOG_DIR="$HOME/logs"
 MODULE_DIR="$HOME/modules"
-SETTINGS_FILE="$HOME/.kaljan747_settings"
 LOG_FILE="$LOG_DIR/wg.log"
-
 mkdir -p "$WG_DIR" "$LOG_DIR" "$MODULE_DIR"
 touch "$LOG_FILE"
-
 SUDO=$(command -v sudo || echo "")
 
-# === USER-ID ===
 ask_user_id() {
     read -p "Введіть ваш USER-ID (тільки цифри): " USER_ID
     [[ "$USER_ID" =~ ^[0-9]+$ ]] || { echo "❌ USER-ID недійсний"; exit 1; }
 }
 
-# === Вибір модуля ===
 ask_parameters() {
     echo "Виберіть модуль:"
     echo "1) mhddos_proxy"
@@ -68,20 +61,20 @@ ask_parameters() {
 
 print_header
 
-# === Завантаження WG-конфігів ===
 print_stage "🌍 Завантаження WG-конфігів з GitHub"
-rm -f "$WG_DIR"/*.conf
-
+echo "[*] Завантаження нових конфігів без видалення старих..."
 ALL_CONF_URLS=$(curl -s "$WG_REPO_HTML" | grep -oP 'href="\K/k7771/Kaljan747/blob/k7771/wg/[^"?]*\.conf' | sed 's|^|https://raw.githubusercontent.com|;s|/blob|/|')
-
 for url in $ALL_CONF_URLS; do
   filename=$(basename "$url")
   dest="$WG_DIR/$filename"
-  curl -fsSL "$url" -o "$dest" && echo "[+] $filename" || echo "[-] $filename"
-  chmod 600 "$dest"
+  if [ -f "$dest" ]; then
+    echo "[=] Пропущено (вже є): $filename"
+  else
+    curl -fsSL "$url" -o "$dest" && echo "[+] Завантажено: $filename" || echo "[-] Помилка: $filename"
+    chmod 600 "$dest"
+  fi
 done
 
-# === Зупинка активних WG ===
 print_stage "🔻 Зупинка активних WG"
 for iface in $(wg show interfaces 2>/dev/null); do
   echo "[-] Зупиняю: $iface" | tee -a "$LOG_FILE"
@@ -89,7 +82,6 @@ for iface in $(wg show interfaces 2>/dev/null); do
   $SUDO ip link delete "$iface" 2>/dev/null || true
 done
 
-# === Підняття до 4-х працюючих WG ===
 check_wg_connection() {
   curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null
 }
@@ -104,7 +96,6 @@ while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
   IFACE_NAME=$(basename "$conf" .conf)
   $SUDO wg-quick up "$conf" 2>/dev/null || true
   sleep 2
-
   if check_wg_connection "$IFACE_NAME"; then
     echo "✅ $IFACE_NAME" | tee -a "$LOG_FILE"
     WG_IFACES+=("$IFACE_NAME")
@@ -122,11 +113,9 @@ VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 echo "[✓] Активні інтерфейси: $VPN_LIST"
 
-# === USER ID + Параметри ===
 ask_user_id
 ask_parameters
 
-# === Завантаження модуля та генерація INI ===
 print_stage "⬇️ Завантаження модуля $MODULE"
 if [ "$MODULE" = "mhddos_proxy" ]; then
   MODULE_BIN="$MODULE_DIR/mhddos_proxy"
@@ -143,10 +132,8 @@ fi
 [ -f "$MODULE_BIN" ] || curl -fsSL "$LINK" -o "$MODULE_BIN"
 chmod +x "$MODULE_BIN"
 
-# === Редагування INI ===
 [ "$EDIT_INI" = "Так" ] && nano "$CONFIG_FILE"
 
-# === Запуск ===
 print_stage "🚀 Запуск модуля..."
 ARGS=$(cat "$CONFIG_FILE")
 if [ "$RUN_MODE" = "screen у фоні" ]; then
