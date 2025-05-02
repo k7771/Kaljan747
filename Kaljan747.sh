@@ -151,6 +151,8 @@ if [ -n "$ACTIVE_IFACES" ]; then
 fi
 
 for iface in $ACTIVE_IFACES; do
+    # Захист від порожнього або некоректного значення
+    [ -z "$iface" ] && continue
     echo "🧹 Зупинка та очищення інтерфейсу: $iface"
     $SUDO wg-quick down "$iface" || true
     $SUDO ip link delete "$iface" || true
