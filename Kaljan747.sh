@@ -18,6 +18,11 @@ ask_user_id() {
 }
 
 ask_run_parameters() {
+    echo "Скільки робочих тунелів потрібно підняти (1-20)?"
+    read -p "Кількість WG: " MAX_WG
+    [[ "$MAX_WG" =~ ^[0-9]+$ ]] || MAX_WG=4
+    [ "$MAX_WG" -lt 1 ] && MAX_WG=1
+    [ "$MAX_WG" -gt 20 ] && MAX_WG=20
     echo "Виберіть модуль:"
     echo "1) mhddos_proxy"
     echo "2) distress"
@@ -46,7 +51,8 @@ ask_run_parameters() {
     echo "1) Використати старі налаштування"
     echo "2) Ввести нові"
     read -p "Ваш вибір (1/2): " choice
-    [ "$choice" = "1" ] && source "$SETTINGS_FILE" || { USER_ID=""; SELECTED_MODULE=""; EDIT_INI=""; SELECTED_RUN_MODE=""; }
+    [ "$choice" = "1" ] && source "$SETTINGS_FILE"
+    : "${MAX_WG:=4}" || { USER_ID=""; SELECTED_MODULE=""; EDIT_INI=""; SELECTED_RUN_MODE=""; }
 }
 
 [ -z "$USER_ID" ] && ask_user_id
@@ -58,6 +64,7 @@ echo -e "🧰  Модуль: \e[1;36m$SELECTED_MODULE\e[0m"
 echo -e "🛠️  Режим: \e[1;36m$SELECTED_RUN_MODE\e[0m"
 
 cat > "$SETTINGS_FILE" <<EOF
+MAX_WG="$MAX_WG"
 USER_ID="$USER_ID"
 SELECTED_MODULE="$SELECTED_MODULE"
 EDIT_INI="$EDIT_INI"
@@ -142,7 +149,7 @@ for iface in $(wg show interfaces 2>/dev/null); do
     $SUDO ip link delete "$iface" || true
 done
 
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 10))
+WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
 WG_IFACES=()
 SUCCESS=0
 FAIL=0
@@ -150,6 +157,7 @@ FAIL=0
 echo -e "\n🔧 Перевірка та підняття WG-інтерфейсів:"
 
 for conf in "${WG_FILES[@]}"; do
+    [ ${#WG_IFACES[@]} -ge $MAX_WG ] && break
     IFACE_NAME=$(basename "$conf" .conf)
     echo -e "\n📄 $IFACE_NAME:"
 
