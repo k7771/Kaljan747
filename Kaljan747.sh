@@ -157,7 +157,6 @@ if [ -n "$ACTIVE_IFACES" ]; then
 else
     echo "✅ Активних інтерфейсів не знайдено."
 fi
-done
 
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
 WG_IFACES=()
