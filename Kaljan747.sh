@@ -47,13 +47,17 @@ ask_run_parameters() {
     esac
 }
 
-[ -f "$SETTINGS_FILE" ] && {
+if [ -f "$SETTINGS_FILE" ]; then
     echo "1) Використати старі налаштування"
     echo "2) Ввести нові"
     read -p "Ваш вибір (1/2): " choice
-    [ "$choice" = "1" ] && source "$SETTINGS_FILE"
-    : "${MAX_WG:=4}" || { USER_ID=""; SELECTED_MODULE=""; EDIT_INI=""; SELECTED_RUN_MODE=""; }
-}
+    if [ "$choice" = "1" ]; then
+        source "$SETTINGS_FILE"
+        : "${MAX_WG:=4}"
+    else
+        USER_ID=""; SELECTED_MODULE=""; EDIT_INI=""; SELECTED_RUN_MODE=""
+    fi
+fi
 
 [ -z "$USER_ID" ] && ask_user_id
 [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" ] && ask_run_parameters
@@ -63,13 +67,11 @@ echo -e "📅  USER-ID: \e[1;32m$USER_ID\e[0m"
 echo -e "🧰  Модуль: \e[1;36m$SELECTED_MODULE\e[0m"
 echo -e "🛠️  Режим: \e[1;36m$SELECTED_RUN_MODE\e[0m"
 
-cat > "$SETTINGS_FILE" <<EOF
-MAX_WG="$MAX_WG"
-USER_ID="$USER_ID"
-SELECTED_MODULE="$SELECTED_MODULE"
-EDIT_INI="$EDIT_INI"
-SELECTED_RUN_MODE="$SELECTED_RUN_MODE"
-EOF
+echo "MAX_WG=\"$MAX_WG\"" > "$SETTINGS_FILE"
+echo "USER_ID=\"$USER_ID\"" >> "$SETTINGS_FILE"
+echo "SELECTED_MODULE=\"$SELECTED_MODULE\"" >> "$SETTINGS_FILE"
+echo "EDIT_INI=\"$EDIT_INI\"" >> "$SETTINGS_FILE"
+echo "SELECTED_RUN_MODE=\"$SELECTED_RUN_MODE\"" >> "$SETTINGS_FILE"
 
 [ "$(id -u)" -eq 0 ] && SUDO="" || SUDO="sudo"
 
@@ -78,8 +80,6 @@ if [ -d "$PWD/wg_confs" ]; then
   WG_DIR="$PWD/wg_confs"
 elif [ -d "$HOME/wg_confs" ]; then
   WG_DIR="$HOME/wg_confs"
-elif [ -d "/etc/wireguard/wg_confs" ]; then
-  WG_DIR="/etc/wireguard/wg_confs"
 else
   echo "❌ Не знайдено папку wg_confs. Створюю в \$HOME"
   WG_DIR="$HOME/wg_confs"
@@ -147,8 +147,7 @@ $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 ACTIVE_IFACES=$(wg show interfaces 2>/dev/null | xargs)
 
 if [ -n "$ACTIVE_IFACES" ]; then
-    echo -e "
-🛑 Буде зупинено інтерфейси: $ACTIVE_IFACES"
+    echo -e "\n🛑 Буде зупинено інтерфейси: $ACTIVE_IFACES"
     for iface in $ACTIVE_IFACES; do
         echo "🧹 Зупинка та очищення інтерфейсу: $iface"
         $SUDO wg-quick down "$iface" || true
@@ -166,7 +165,6 @@ FAIL=0
 echo -e "\n🔧 Перевірка та підняття WG-інтерфейсів:"
 
 for conf in "${WG_FILES[@]}"; do
-    
     IFACE_NAME=$(basename "$conf" .conf)
     echo -e "\n📄 $IFACE_NAME:"
 
@@ -176,10 +174,10 @@ for conf in "${WG_FILES[@]}"; do
     if $SUDO wg-quick up "$conf" 2> >(tee /tmp/wg_error.log >&2); then
         if $SUDO wg show "$IFACE_NAME" &>/dev/null; then
             WG_IFACES+=("$IFACE_NAME")
-            [ ${#WG_IFACES[@]} -ge $MAX_WG ] && break
             echo "✅ Інтерфейс $IFACE_NAME піднято"
             $SUDO wg show "$IFACE_NAME"
             ((SUCCESS++))
+            [ ${#WG_IFACES[@]} -ge $MAX_WG ] && break
         else
             echo "⚠️ Неактивний $IFACE_NAME"
             ((FAIL++))
@@ -190,6 +188,7 @@ for conf in "${WG_FILES[@]}"; do
         ((FAIL++))
     fi
     sleep 1
+
 done
 
 rm -f /tmp/wg_error.log
