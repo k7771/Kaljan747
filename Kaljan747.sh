@@ -1,23 +1,27 @@
 #!/bin/bash
 set -e
 
+# === КОНСТАНТИ ===
 WG_REPO_RAW="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
 WG_DIR="$HOME/wg_confs"
 LOG_DIR="$HOME/logs"
 MODULE_DIR="$HOME/modules"
 LOG_FILE="$LOG_DIR/wg.log"
+
 mkdir -p "$WG_DIR" "$LOG_DIR" "$MODULE_DIR"
 touch "$LOG_FILE"
 SUDO=$(command -v sudo || echo "")
 
+# === USER-ID ===
 ask_user_id() {
     read -p "USER-ID (тільки цифри): " USER_ID
-    [[ "$USER_ID" =~ ^[0-9]+$ ]] || { echo "USER-ID недійсний"; exit 1; }
+    [[ "$USER_ID" =~ ^[0-9]+$ ]] || { echo "❌ USER-ID недійсний"; exit 1; }
 }
 
+# === Запит параметрів запуску ===
 ask_parameters() {
     echo "1) mhddos_proxy | 2) distress"
-    read -p "Ваш вибір (1/2): " mod_choice
+    read -p "Модуль (1/2): " mod_choice
     MODULE=$( [ "$mod_choice" = "1" ] && echo "mhddos_proxy" || echo "distress" )
     echo "1) Так | 2) Ні"
     read -p "Редагувати INI? (1/2): " edit_choice
@@ -31,27 +35,34 @@ ask_parameters() {
     esac
 }
 
-echo "[+] Завантаження конфігів з GitHub..."
-for i in $(seq 1 30); do
+# === Завантаження WG-конфігів з GitHub ===
+echo "[+] Завантаження WG-конфігів..."
+for i in $(seq 1 50); do
   FILE="wg$i.conf"
   URL="$WG_REPO_RAW/$FILE"
   DEST="$WG_DIR/$FILE"
-  [ -f "$DEST" ] && echo "[=] Вже є: $FILE" && continue
-  curl -fsSL "$URL" -o "$DEST" && echo "[+] $FILE" || echo "[-] $FILE"
-  chmod 600 "$DEST"
+  if [ -f "$DEST" ]; then
+    echo "[=] Вже існує: $FILE"
+  else
+    curl -fsSL "$URL" -o "$DEST" && echo "[+] Завантажено: $FILE" || echo "[-] Не знайдено: $FILE"
+    chmod 600 "$DEST"
+  fi
 done
 
+# === Зупинка активних WG ===
 echo "[+] Зупинка активних WG..."
 for iface in $(wg show interfaces 2>/dev/null); do
-  echo "[-] $iface" | tee -a "$LOG_FILE"
+  echo "[-] Зупинка: $iface"
   $SUDO wg-quick down "$iface" 2>/dev/null || true
   $SUDO ip link delete "$iface" 2>/dev/null || true
 done
 
+# === Перевірка чи WG-тунель працює ===
 check_wg() {
   curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null
 }
 
+# === Підняття до 4 робочих тунелів ===
 WG_FILES=( $(find "$WG_DIR" -name "*.conf" | shuf) )
 WG_IFACES=()
 INDEX=0
@@ -62,10 +73,10 @@ while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
   $SUDO wg-quick up "$CONF" 2>/dev/null || true
   sleep 2
   if check_wg "$IFACE"; then
-    echo "[+] $IFACE активний" | tee -a "$LOG_FILE"
+    echo "[+] Працює: $IFACE"
     WG_IFACES+=("$IFACE")
   else
-    echo "[-] $IFACE не працює" | tee -a "$LOG_FILE"
+    echo "[-] Не працює: $IFACE"
     $SUDO wg-quick down "$IFACE" 2>/dev/null || true
     $SUDO ip link delete "$IFACE" 2>/dev/null || true
   fi
@@ -77,9 +88,11 @@ done
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 
+# === USER-ID + Параметри ===
 ask_user_id
 ask_parameters
 
+# === Завантаження модуля + формування INI ===
 if [ "$MODULE" = "mhddos_proxy" ]; then
   MODULE_BIN="$MODULE_DIR/mhddos_proxy"
   CONFIG_FILE="$MODULE_DIR/mhddos.ini"
