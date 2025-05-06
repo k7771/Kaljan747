@@ -181,7 +181,7 @@ VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 
 # === Оновлення INI файлів ===
-echo "--use-my-ip 0 --copies 4 -t 12000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
+echo "--use-my-ip 0 --copies auto -t 8000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
 echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
 
 CONFIG_FILE="$MODULE_DIR/mhddos.ini"
