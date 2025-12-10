@@ -181,7 +181,7 @@ $SUDO chmod 600 "$WG_DIR"/*.conf 2>/dev/null || true
 # =====================================================================
 
 
-# === ПІДКЛЮЧЕННЯ 4 РОБОЧИХ ТУНЕЛІВ ===
+# === ПІДКЛЮЧЕННЯ 2 РОБОЧИХ ТУНЕЛІВ ===
 check_wg_connection() {
     curl -s --interface "$1" --max-time 5 https://api.ipify.org >/dev/null 2>&1
 }
@@ -190,7 +190,7 @@ WG_FILES=($(find "$WG_DIR" -name "*.conf" -type f | shuf))
 WG_IFACES=()
 INDEX=0
 
-while [ "${#WG_IFACES[@]}" -lt 4 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
+while [ "${#WG_IFACES[@]}" -lt 2 ] && [ "$INDEX" -lt "${#WG_FILES[@]}" ]; do
     conf="${WG_FILES[$INDEX]}"
     IFACE_NAME=$(basename "$conf" .conf)
     $SUDO wg-quick up "$conf" 2>/dev/null || true
@@ -239,3 +239,4 @@ esac
 
 print_summary "$PID"
 exit 0
+
